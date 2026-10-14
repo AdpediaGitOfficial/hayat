@@ -12,6 +12,7 @@ import type { CurrentUser } from '@/server/auth/current'
 import { waitlistSection } from '../app/(app)/waitlist/_components/MySection'
 // <<< WP-E my imports
 // >>> WP-F my imports
+import { renderMyStay } from '../app/(app)/stays/_components/MyStay'
 // <<< WP-F my imports
 
 export interface MySection {
@@ -21,6 +22,7 @@ export interface MySection {
 
 export const MY_SECTIONS: readonly MySection[] = [
   // >>> WP-F my sections (current stay, checkout)
+  { id: 'stay', render: renderMyStay },
   // <<< WP-F my sections
   // >>> WP-E my sections (bed offer, waitlist)
   { id: 'waitlist', render: waitlistSection },

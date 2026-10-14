@@ -10,6 +10,7 @@ import '../commands/waitlist/source'
 // <<< WP-E approval sources
 
 // >>> WP-F approval sources (transfers, swaps, extensions)
+import '@/server/commands/stays/approvalSources'
 // <<< WP-F approval sources
 
 // >>> WP-G approval sources (emergency)
