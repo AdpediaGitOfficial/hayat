@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Alert, Blocked, Button, Field, Select, Textarea } from '@/ui'
 import type { TransferListRow } from '@/server/queries/stays/transfers'
 import { Problem, useCall } from './call'
+import { TransferException } from './TransferException'
 
 export function TransferActions({ t }: { t: TransferListRow }) {
   const { run, busy, err } = useCall()
@@ -20,11 +21,21 @@ export function TransferActions({ t }: { t: TransferListRow }) {
   const approveLabel = !t.crossSite ? (t.status === 'failed' ? 'Approve with this bed' : `Approve ${t.kind}`)
     : gives === 'both' ? `Approve for both sites` : gives === 'source' ? `Approve: let them leave ${t.siteName}` : `Approve: take them into ${t.destinationSiteName}`
   const otherSideWaits = t.crossSite && ((gives === 'source' && !t.keys.destination.approved) || (gives === 'destination' && !t.keys.source.approved))
+  const canAsk = t.exceptionPath && (err?.detail as { canAskException?: boolean } | undefined)?.canAskException === true
+  const asking = needsDest ? t.askableBeds.find(b => b.bedId === dest) : undefined
   const missing = t.consent ? [!t.consent.a && t.name, !t.consent.b && t.otherName].filter(Boolean) as string[] : []
 
   return (
     <div className="stack" style={{ gap: 10 }}>
       {err && <Problem f={err} />}
+      {/* P-10 (proposed, pending client sign-off): the destination bed fails a rule and a Policy Approver may be asked. Explicit, never automatic. */}
+      {err && canAsk && needsDest && dest && (
+        <div className="row wrap">
+          <Button size="sm" disabled={busy} onClick={() => run(`${base}/approve`, { destinationBedId: dest, askException: true })}>Ask a Policy Approver for an exception for this bed</Button>
+          <span className="muted body-sm">Proposed policy, pending client sign-off. Your approval is not given until they decide.</span>
+        </div>
+      )}
+      <TransferException transferId={t.id} exceptions={t.exceptions} kind={t.kind} />
 
       {t.kind === 'swap' && t.status === 'requested' && missing.length > 0 && (
         <Blocked why={`Waiting for ${missing.join(' and ')} to agree to the swap`} owner="The resident, or the Accommodation Admin recording it" next="The resident confirms in the app, or record how they agreed (in person, by phone, in writing)" />
@@ -58,12 +69,21 @@ export function TransferActions({ t }: { t: TransferListRow }) {
                 <option value="">Choose a bed</option>
                 {t.toBedId && !t.suggestions.some(s => s.bedId === t.toBedId) && t.status !== 'failed' && <option value={t.toBedId}>{t.toBedLabel ?? 'Requested bed'}</option>}
                 {t.suggestions.map(s => <option key={s.bedId} value={s.bedId}>{s.roomName} · {s.code}</option>)}
+                {t.askableBeds.length > 0 && (
+                  <optgroup label="Needs a Policy Approver exception (proposed policy, pending client sign-off)">
+                    {t.askableBeds.map(b => <option key={b.bedId} value={b.bedId}>{b.label}</option>)}
+                  </optgroup>
+                )}
               </Select>
             </Field>
           )}
+          {asking && (
+            <Alert tone="warning" title="This bed fails a rule of the site" detail={`${asking.reasons.join('; ')}. A Policy Approver can be asked for an exception for this move only. Your approval is not given until they decide.`} />
+          )}
           <div className="row wrap">
-            <Button variant="primary" size="sm" disabled={busy || (needsDest && !dest) || missing.length > 0} onClick={() => run(`${base}/approve`, { destinationBedId: needsDest ? dest || null : null })}>
-              {approveLabel}
+            <Button variant="primary" size="sm" disabled={busy || (needsDest && !dest) || missing.length > 0}
+              onClick={() => run(`${base}/approve`, { destinationBedId: needsDest ? dest || null : null, ...(asking ? { askException: true } : {}) })}>
+              {asking ? 'Ask a Policy Approver for an exception for this bed' : approveLabel}
             </Button>
             <Button size="sm" onClick={() => setRejecting(true)}>Reject</Button>
           </div>

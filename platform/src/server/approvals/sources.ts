@@ -14,6 +14,10 @@ import '../commands/waitlist/source'
 import '@/server/commands/stays/approvalSources'
 // <<< WP-F approval sources
 
+// >>> WP-N approval sources (Policy Approver exception for a transfer destination, P-10 proposed)
+import '@/server/commands/stays/exceptionSource'
+// <<< WP-N approval sources
+
 // >>> WP-G approval sources (emergency)
 import '@/server/queries/emergency/approvalSource'
 // <<< WP-G approval sources

@@ -133,9 +133,9 @@ async function runTransfer(c: CommandContext, t: TransferRow): Promise<Result<Ex
   if ('ok' in period) return period
 
   // The destination is judged first. Nothing is released until it has passed.
-  const taken = await takenBy(c, destId, s, period, t.destinationSiteId)
+  const taken = await takenBy(c, destId, s, period, t.destinationSiteId, t.id)
   if (taken) return executionFailed(taken)
-  const a = await guarded(c, c2 => allocateBed(c2, { bedId: destId, staffId: s.staffId, from: period.from, to: period.to, kind: 'stay', requireReady: true }))
+  const a = await guarded(c, c2 => allocateBed(c2, { bedId: destId, staffId: s.staffId, from: period.from, to: period.to, kind: 'stay', requireReady: true, transferId: t.id }))
   if (!a.ok) return executionFailed(a)
 
   await releaseClaim(c.tx, s.claimId, 'transferred', c.now)
@@ -179,11 +179,11 @@ async function runTransfer(c: CommandContext, t: TransferRow): Promise<Result<Ex
 }
 
 /** An overlapping claim on the destination, answered like allocateBed would (taken or held), with beds that are ready now. */
-async function takenBy(c: CommandContext, bedId: string, s: StayFull, p: { from: string; to?: string }, siteId: string): Promise<Failure | undefined> {
+async function takenBy(c: CommandContext, bedId: string, s: StayFull, p: { from: string; to?: string }, siteId: string, transferId: string): Promise<Failure | undefined> {
   const conflicts = await overlappingClaims(c.tx, bedId, p.from, p.to)
   if (conflicts.length === 0) return undefined
   const held = conflicts.some(x => x.kind === 'offer_hold')
-  const suggestions = (await suggestBeds(c.tx, { staffId: s.staffId, siteId, from: p.from, to: p.to, limit: 8, excludeBedIds: [bedId, s.bedId], now: c.now })).filter(x => x.state === 'available').slice(0, 3)
+  const suggestions = (await suggestBeds(c.tx, { staffId: s.staffId, siteId, from: p.from, to: p.to, limit: 8, excludeBedIds: [bedId, s.bedId], transferId, now: c.now })).filter(x => x.state === 'available').slice(0, 3)
   return fail.conflict(
     held ? 'The destination bed is held by a bed offer' : 'The destination bed was taken for those dates',
     held ? 'The offered resident' : 'Accommodation Admin',
@@ -219,9 +219,9 @@ async function runSwap(c: CommandContext, t: TransferRow): Promise<Result<Execut
   // if either new claim is refused, the whole transaction (including the releases) is rolled back.
   await releaseClaim(c.tx, sa.claimId, 'swapped', c.now)
   await releaseClaim(c.tx, sb.claimId, 'swapped', c.now)
-  const toB = await guarded(c, c2 => allocateBed(c2, { bedId: sb.bedId, staffId: sa.staffId, from: pa.from, to: pa.to, kind: 'stay' }))
+  const toB = await guarded(c, c2 => allocateBed(c2, { bedId: sb.bedId, staffId: sa.staffId, from: pa.from, to: pa.to, kind: 'stay', transferId: t.id }))
   if (!toB.ok) return executionFailed(toB, nameA)
-  const toA = await guarded(c, c2 => allocateBed(c2, { bedId: sa.bedId, staffId: sb.staffId, from: pb.from, to: pb.to, kind: 'stay' }))
+  const toA = await guarded(c, c2 => allocateBed(c2, { bedId: sa.bedId, staffId: sb.staffId, from: pb.from, to: pb.to, kind: 'stay', transferId: t.id }))
   if (!toA.ok) return executionFailed(toA, nameB)
 
   await c.tx.update(stay).set({ bedId: sb.bedId, claimId: toB.data.claimId }).where(eq(stay.id, sa.id))

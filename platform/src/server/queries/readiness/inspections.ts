@@ -27,6 +27,8 @@ export interface InspectionItem {
   issue: boolean
   lines: { id: string; label: string; done: boolean }[]
   attachmentCount: number
+  /** No housekeeper cleaned it: the task was opened by hand for a bed with no cleaning record (P-14, proposed, pending client sign-off). */
+  noCleaningRecord: boolean
   /** Set when the viewer may not inspect this one. */
   blocked: { reason: string; owner: string; next: string } | null
 }
@@ -51,7 +53,7 @@ export async function inspectionQueue(db: Pick<Db, 'select'>, actor: Actor): Pro
     return {
       taskId: r.t.id, bedId: r.t.bedId, bedCode: r.bedCode, roomName: r.roomName, buildingName: r.buildingName, siteId: r.siteId, siteName: r.siteName,
       cleanedByName: r.t.cleanedByStaff ? cleaners.get(r.t.cleanedByStaff) ?? null : null, cleanedAt: r.t.cleanedAt?.toISOString() ?? null,
-      notes: rec?.notes ?? null, issue: !!rec?.issue, lines: (rec?.lines ?? []).map(l => ({ id: l.id, label: l.label, done: l.done })), attachmentCount: rec?.attachmentIds?.length ?? 0, blocked,
+      notes: rec?.notes ?? null, issue: !!rec?.issue, lines: (rec?.lines ?? []).map(l => ({ id: l.id, label: l.label, done: l.done })), attachmentCount: rec?.attachmentIds?.length ?? 0, noCleaningRecord: !r.t.cleanedByStaff, blocked,
     }
   })
 }

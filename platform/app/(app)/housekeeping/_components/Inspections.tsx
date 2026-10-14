@@ -38,7 +38,7 @@ function Item({ item: i }: { item: InspectionItem }) {
         <Badge tone="warning">Inspection required</Badge>
         {i.issue && <Badge tone="danger">Damage reported</Badge>}
       </div>
-      {i.notes && <div style={{ marginTop: 8 }}><Alert tone={i.issue ? 'warning' : 'info'} title={i.issue ? 'Damage or missing items noted' : 'Housekeeper note'} detail={i.notes} /></div>}
+      {i.notes && <div style={{ marginTop: 8 }}><Alert tone={i.issue ? 'warning' : 'info'} title={i.issue ? 'Damage or missing items noted' : i.noCleaningRecord ? 'No cleaning record' : 'Housekeeper note'} detail={i.notes} /></div>}
       {i.lines.length > 0 && <div className="muted body-sm" style={{ marginTop: 6 }}>{i.lines.filter(l => l.done).length} of {i.lines.length} lines ticked{i.attachmentCount > 0 ? ` · ${i.attachmentCount} photo${i.attachmentCount === 1 ? '' : 's'}` : ''}</div>}
       {err && <div style={{ marginTop: 8 }}><Problem f={err} /></div>}
       {i.blocked

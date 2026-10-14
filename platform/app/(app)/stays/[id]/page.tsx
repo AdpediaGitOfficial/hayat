@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
-import { getStayDetail, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
+import { getStayDetail, receptionMayRaise, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
 import { Alert, Badge, Blocked, GlassCard, PageHeader, Status } from '@/ui'
 import { fmtDate, fmtDateLong } from '@/domain/time'
 import { FlagBadge } from '../_components/FlagBadge'
@@ -18,7 +18,7 @@ export default async function StayPage({ params }: { params: { id: string } }) {
   const { actor } = cur.rc
   const d = await getStayDetail(actor, params.id)
   if (!d) notFound()
-  const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId })
+  const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId }, { receptionMayRaise: await receptionMayRaise() })
   const active = d.status === 'active'
   const ctx = { id: d.id, name: d.name, from: d.from, to: d.to, active }
   const canAsk = active && ab.requestTransfer && !d.openTransfer

@@ -56,8 +56,11 @@ function Row({ r, canAssign }: { r: BoardRow; canAssign: boolean }) {
   const [assigning, setAssigning] = useState(false)
   const cancel = useCall()
   const [cancelling, setCancelling] = useState(false)
+  const [opening, setOpening] = useState(false)
   const [reason, setReason] = useState('')
   const t = r.task
+  // A bed in Needs cleaning or Inspection required with NO task on record (migrated or seeded data): the hand path of S-22, P-14 (proposed, pending client sign-off).
+  const noRecord = !t && (r.state === 'needs_cleaning' || r.state === 'inspection_required')
   const open = t?.status === 'open' && r.state === 'needs_cleaning'
   // A task its bed no longer needs (blocked, or out of step) can be cancelled so a fresh one opens when the bed returns.
   const stale = !!t && !((t.status === 'open' && r.state === 'needs_cleaning') || (t.status === 'cleaned' && r.state === 'inspection_required'))
@@ -76,6 +79,12 @@ function Row({ r, canAssign }: { r: BoardRow; canAssign: boolean }) {
       <div style={{ marginTop: 6 }}><Blocked why={r.label} owner={r.owner} next={r.next} /></div>
       {t?.issue && <div style={{ marginTop: 6 }}><Badge tone="danger">Damage reported while cleaning</Badge></div>}
       {t && <div className="muted body-sm" style={{ marginTop: 6 }}>{t.assigneeName ? `Assigned to ${t.assigneeName}` : 'Not assigned'} · {t.reason}{t.cleanedByName ? ` · cleaned by ${t.cleanedByName}` : ''}</div>}
+      {canAssign && noRecord && (
+        <div className="row wrap" style={{ marginTop: 8 }}>
+          <Button variant="primary" onClick={() => setOpening(true)}>Open a task by hand…</Button>
+          <span className="muted body-sm">Proposed policy, pending client sign-off. A reason is required and kept in the audit log.</span>
+        </div>
+      )}
       {canAssign && t && (
         <div className="row wrap" style={{ marginTop: 8 }}>
           {open && <Button variant={t.assigneeName ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>{t.assigneeName ? 'Reassign…' : 'Assign a housekeeper…'}</Button>}
@@ -83,6 +92,19 @@ function Row({ r, canAssign }: { r: BoardRow; canAssign: boolean }) {
         </div>
       )}
       {assigning && t && <AssignModal task={t} bed={r} onClose={() => setAssigning(false)} />}
+      <Modal open={opening} onClose={() => setOpening(false)} title="Open a cleaning task by hand" subtitle={`Bed ${r.bedCode} · ${where}`}
+        footer={<><Button variant="ghost" onClick={() => setOpening(false)}>Back</Button>
+          <Button variant="primary" disabled={cancel.busy || reason.trim().length < 3} onClick={() => void cancel.run('POST', `/api/v1/readiness/beds/${r.bedId}/open-task`, { reason: reason.trim() }, () => { setOpening(false); setReason('') })}>
+            {r.state === 'inspection_required' ? 'Open for the final inspection' : 'Open the task'}</Button></>}>
+        <div className="form">
+          {cancel.err && <Problem f={cancel.err} />}
+          <Alert tone="info" title={r.state === 'inspection_required' ? 'There is no cleaning record for this bed' : 'This bed has no cleaning task'}
+            detail={r.state === 'inspection_required'
+              ? 'The task is opened as already cleaned, with a note that readiness was restored without a cleaning record, so the final inspection can proceed. You cannot inspect it yourself.'
+              : 'A normal cleaning task is opened. Assign a housekeeper afterwards.'} />
+          <Field label="Why" error={cancel.err?.fields?.reason}><Textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} /></Field>
+        </div>
+      </Modal>
       <Modal open={cancelling} onClose={() => setCancelling(false)} title="Cancel this cleaning task" subtitle={`Bed ${r.bedCode}`}
         footer={<><Button variant="ghost" onClick={() => setCancelling(false)}>Back</Button>
           <Button variant="danger" disabled={cancel.busy || reason.trim().length < 3} onClick={() => t && void cancel.run('POST', `/api/v1/readiness/tasks/${t.id}/cancel`, { reason: reason.trim() }, () => setCancelling(false))}>Cancel task</Button></>}>
@@ -113,10 +135,10 @@ function AssignModal({ task, bed, onClose }: { task: NonNullable<BoardRow['task'
       <div className="form">
         {err && <Problem f={err} />}
         {loadErr && <Alert tone="danger" title={loadErr} />}
-        <Field label="Housekeeper" hint="Only people holding the Housekeeping capability are listed. Nobody can be given the room they live in." error={err?.fields?.housekeeperStaffId}>
+        <Field label="Housekeeper" hint="Everyone holding the Housekeeping capability is listed (it carries no site); people recently given a task at this site come first, then those with the fewest open tasks. Nobody can be given the room they live in." error={err?.fields?.housekeeperStaffId}>
           <Select value={pick} onChange={e => setPick(e.target.value)} aria-label="Housekeeper">
             <option value="">{people ? (people.length ? 'Choose…' : 'Nobody holds the Housekeeping capability') : 'Loading…'}</option>
-            {(people ?? []).map(p => <option key={p.staffId} value={p.staffId} disabled={!!p.blocked}>{p.name} ({p.employeeId}) · {p.openTasks} open{p.blocked ? ` · ${p.blocked}` : ''}</option>)}
+            {(people ?? []).map(p => <option key={p.staffId} value={p.staffId} disabled={!!p.blocked}>{p.name} ({p.employeeId}) · {p.openTasks} open{p.recentAtSite ? ' · works here' : ''}{p.blocked ? ` · ${p.blocked}` : ''}</option>)}
           </Select>
         </Field>
         {reassign && <Field label="Reason for the change" error={err?.fields?.note}><Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} /></Field>}

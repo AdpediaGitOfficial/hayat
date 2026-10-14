@@ -4,10 +4,11 @@ import { z } from 'zod'
 import { bed, site } from '@/server/db/schema'
 import { transferRequest } from '@/server/db/schema.stays'
 import type { CommandContext, Tx } from '@/server/command/context'
-import { fail, type Failure, type Result } from '@/server/command/result'
+import { fail, failure, type Failure, type Result } from '@/server/command/result'
 import { mapDbError } from '@/server/command/run'
 import { decide } from '@/server/policy'
 import { checkEligibility } from '@/server/eligibility'
+import { getConfig, type ConfigKey } from '@/server/config/registry'
 import { authorizeDecision, staffName } from './shared'
 
 export type TransferRow = typeof transferRequest.$inferSelect
@@ -39,22 +40,78 @@ export async function checkDestination(tx: Tx, o: { siteId: string; currentBedId
     return fail.conflict('That bed is not in the site this move is going to', 'Accommodation Admin of the destination site', 'Choose a bed in the destination site', { reason: 'wrong_site' })
   }
   if (b.id === o.currentBedId) return fail.invalid('The destination is the bed the resident is already in', { destinationBedId: 'Choose a different bed' })
-  if (b.archivedAt || b.state === 'archived') return fail.invalid('That bed is archived', { destinationBedId: 'Choose a different bed' })
+  if (b.archivedAt || b.state === 'archived') {
+    return failure('invalid', 'That bed is archived', { fields: { destinationBedId: 'Choose a different bed' }, owner: 'Accommodation Admin', next: 'Choose a different bed in the destination site', detail: { reason: 'bed_archived', bedId: b.id } })
+  }
   return undefined
 }
+
+/* ---------------- proposed policies (pending client sign-off) ---------------- */
+
+const POLICY_ASKS: Record<'P-09' | 'P-10' | 'P-11', { setting: ConfigKey }> = {
+  'P-09': { setting: 'transfers.reception_may_raise' },
+  'P-10': { setting: 'transfers.exception_path' },
+  'P-11': { setting: 'transfers.swap_partner_lookup' },
+}
+
+/**
+ * The refusal for something a PROPOSED policy would allow while its setting is off. It never calls the policy approved: the wording is
+ * "policy not in force: proposed, pending client sign-off". Owner and next action say who can still get the thing done today.
+ */
+export function policyNotInForce(policy: 'P-09' | 'P-10' | 'P-11', what: string, o: { owner: string; next: string }): Failure {
+  return failure('forbidden', `${what}: policy not in force: proposed, pending client sign-off (${policy})`, {
+    owner: o.owner, next: o.next, detail: { reason: 'policy_not_in_force', policy, setting: POLICY_ASKS[policy].setting },
+  })
+}
+
+/**
+ * P-09 (proposed, pending client sign-off): Reception may raise a transfer or swap on behalf of a resident at their site. The policy table
+ * carries the grant; this is the setting that switches it on. Only a Reception actor is gated: the resident (own stay) and an Accommodation
+ * Admin are unaffected. Reception never approves, with the setting on or off (the approval actions do not include Reception).
+ */
+export async function receptionGate(c: Pick<CommandContext, 'tx' | 'actor'>, siteId?: string): Promise<Failure | undefined> {
+  if (c.actor.role !== 'Rec') return undefined
+  if (await getConfig(c.tx, 'transfers.reception_may_raise', siteId)) return undefined
+  return policyNotInForce('P-09', 'Reception cannot raise a transfer or swap', { owner: 'Accommodation Admin', next: 'Ask an Accommodation Admin to raise it' })
+}
+
+/** P-10 (proposed, pending client sign-off): may a Policy Approver grant a recorded exception for a transfer destination? */
+export const exceptionPathOn = (q: Pick<Tx, 'select'>, siteId?: string) => getConfig(q, 'transfers.exception_path', siteId)
 
 /**
  * Early eligibility check at the DESTINATION for a cross-site move (D-104): the destination site's gender and grade rules apply, not the
  * source's. Same wording and owner as the allocation refusal (a Policy Approver exception, if one exists for this person and site, passes).
- * Execution revalidates anyway (allocateBed); this only saves a doomed request.
+ * Execution revalidates anyway (allocateBed); this only saves a doomed request. `transferId` lets an exception granted for THIS transfer
+ * (P-10, proposed, pending client sign-off) count; without it only a person-and-site exception does.
+ *
+ * The refusal says whether the exception path is open (`detail.canAskException`: P-10 on and every failure is one a Policy Approver may
+ * waive). With it off the next action no longer points at a Policy Approver, because for a transfer that route is not in force.
  */
-export async function checkEligibleAt(c: Pick<CommandContext, 'tx' | 'now'>, staffId: string, bedId: string): Promise<Failure | undefined> {
-  const e = await checkEligibility(c.tx, staffId, bedId, c.now)
+export async function checkEligibleAt(c: Pick<CommandContext, 'tx' | 'now'>, staffId: string, bedId: string, o: { transferId?: string } = {}): Promise<Failure | undefined> {
+  const e = await checkEligibility(c.tx, staffId, bedId, c.now, { transferId: o.transferId })
   if (!e) return fail.notFound()
   if (e.ok) return undefined
+  const open = e.exceptionable && await exceptionPathOn(c.tx)
   return fail.conflict(e.reasons.join('; '), e.exceptionable ? 'Policy Approver' : 'Accommodation Admin',
-    e.exceptionable ? 'Ask a Policy Approver for an exception, or choose an eligible bed' : 'Not eligible for accommodation',
-    { reason: 'not_eligible', failed: e.failed, exceptionable: e.exceptionable })
+    !e.exceptionable ? 'Not eligible for accommodation'
+      : open ? 'Ask a Policy Approver for an exception, or choose an eligible bed'
+        : 'Choose an eligible bed (a Policy Approver exception for a transfer is not in force: proposed, pending client sign-off)',
+    { reason: 'not_eligible', failed: e.failed, exceptionable: e.exceptionable, canAskException: open })
+}
+
+/**
+ * What to do with a destination refusal (from `checkEligibleAt`) when the caller may have asked to go on regardless (P-10, proposed,
+ * pending client sign-off). Returns the failure to hand back, or undefined = go on: the move is recorded and waits for a Policy
+ * Approver's exception. Going on needs BOTH the explicit ask and an open exception path; a left employee is never exceptionable, and
+ * with the path closed the answer says the policy is not in force instead of pretending a Policy Approver could help.
+ */
+export function exceptionAnswer(refusal: Failure, ask: boolean | undefined): Failure | undefined {
+  const d = (refusal.detail ?? {}) as { exceptionable?: boolean; canAskException?: boolean }
+  if (!ask || !d.exceptionable) return refusal
+  if (d.canAskException) return undefined
+  return policyNotInForce('P-10', 'A Policy Approver exception for this transfer cannot be asked for', {
+    owner: 'Accommodation Admin', next: 'Choose a bed the person is eligible for. The exception path for transfers is proposed and not in force (pending client sign-off)',
+  })
 }
 
 /** A site a resident can be moved into: it exists and is not archived. */

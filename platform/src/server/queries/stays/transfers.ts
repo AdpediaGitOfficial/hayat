@@ -1,10 +1,15 @@
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
-import { site, stay } from '@/server/db/schema'
+import { site, staffProfile, stay } from '@/server/db/schema'
 import { checkoutRequest, extensionRequest, transferRequest } from '@/server/db/schema.stays'
 import { getDb } from '@/server/db/client'
 import { can, scopeFilter, type Actor } from '@/server/policy'
 import { getClock } from '@/server/runtime'
+import { getConfig } from '@/server/config/registry'
 import { suggestBeds, type BedSuggestion } from '@/server/allocation'
+import { checkEligibility } from '@/server/eligibility'
+import { claimPeriod } from '@/domain/claims'
+import { bed as bedTable, room } from '@/server/db/schema'
+import { exceptionNeeds, type ExceptionNeed } from '@/server/commands/stays/transferException'
 import { scopeSql } from '@/server/queries/scope'
 import { bedInfoMap, localDate, personMap, personOf } from './common'
 
@@ -20,6 +25,26 @@ export interface ApprovalKey {
 }
 /** What an open request is waiting for, in words that name the owner and the next action (never a dead end). */
 export interface WaitingFor { text: string; owner: string; next: string }
+
+/**
+ * A person of the move whose destination bed fails a gender or grade rule of the destination site (P-10, PROPOSED, pending client sign-off).
+ * Shown only while `transfers.exception_path` is on. `waiting`: a Policy Approver of that site can decide; `declined`: they did, for
+ * this bed; `blocked`: not waivable (a left employee).
+ */
+export interface ExceptionView {
+  staffId: string
+  name: string
+  party: 'first' | 'second'
+  bedLabel: string
+  siteId: string
+  siteName: string
+  state: ExceptionNeed['state']
+  failed: ('gender' | 'grade')[]
+  reasons: string[]
+  declinedReason: string | null
+  /** The viewer is a Policy Approver of that site and not part of the move or its raiser. The command checks again and asks for the password. */
+  viewerCanDecide: boolean
+}
 
 export interface TransferListRow {
   id: string
@@ -56,6 +81,17 @@ export interface TransferListRow {
   decisionReason: string | null
   /** Beds ready now that could take the move (offered when no destination is chosen, or after a failure). */
   suggestions: BedSuggestion[]
+  /** Raised for the resident by someone else (an Accommodation Admin, or Reception when P-09 is on). Null = the resident asked. */
+  raisedBy: { name: string } | null
+  /** Destination checks that need a Policy Approver (P-10). Empty when the setting is off or everyone passes. */
+  exceptions: ExceptionView[]
+  /** P-10 in force (the setting is on). */
+  exceptionPath: boolean
+  /**
+   * Beds of the destination site that are ready and free but fail a gender or grade rule that a Policy Approver may waive (P-10, proposed,
+   * pending client sign-off). Listed for whoever chooses the bed, so the choice can be made WITH the exception asked for. Empty otherwise.
+   */
+  askableBeds: { bedId: string; label: string; roomName: string; code: string; reasons: string[] }[]
   /** Set when the viewer is one of the two residents in a swap (resident mode): they answer for themselves. */
   viewerParty: 'a' | 'b' | null
   /** `approve` = the viewer can give at least one missing key; `chooseBed` = they give the destination key, so they pick the bed. */
@@ -87,9 +123,10 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
   const siteIds = [...new Set(raw.flatMap(t => [t.siteId, t.destinationSiteId]))]
   const sites = new Map((await db.select({ id: site.id, name: site.name, tz: site.timeZone }).from(site).where(inArray(site.id, siteIds))).map(s => [s.id, s]))
   // Names are staff data: whoever may look people up at EITHER site of the move (the admin who approves the other end needs to know who is coming).
-  const people = await personMap(actor, raw.flatMap(t => [t.staffId, ...(t.otherStaffId ? [t.otherStaffId] : [])].flatMap(staffId => [
+  const people = await personMap(actor, raw.flatMap(t => [t.staffId, ...(t.otherStaffId ? [t.otherStaffId] : []), ...(t.requestedByStaffId ? [t.requestedByStaffId] : [])].flatMap(staffId => [
     { staffId, siteId: t.siteId }, ...(t.destinationSiteId !== t.siteId ? [{ staffId, siteId: t.destinationSiteId }] : []),
   ])))
+  const exceptionPath = await getConfig(db, 'transfers.exception_path')
   const stays = await db.select({ id: stay.id, claim: sql<string | null>`upper((select period from bed_claim where id = ${stay.claimId}))::text` }).from(stay).where(inArray(stay.id, raw.map(t => t.stayId)))
   const endOf = new Map(stays.map(s => [s.id, s.claim]))
 
@@ -115,10 +152,30 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       const today = localDate(now, dstSite?.tz ?? info.siteTimeZone)
       const to = endOf.get(t.stayId) ?? undefined
       if (!to || to > today) {
-        suggestions = (await suggestBeds(db, { staffId: t.staffId, siteId: t.destinationSiteId, from: today, to: to ?? undefined, limit: 8, excludeBedIds: [t.fromBedId], now })).filter(b => b.state === 'available').slice(0, 5)
+        suggestions = (await suggestBeds(db, { staffId: t.staffId, siteId: t.destinationSiteId, from: today, to: to ?? undefined, limit: 8, excludeBedIds: [t.fromBedId], transferId: t.id, now })).filter(b => b.state === 'available').slice(0, 5)
       }
     }
-    const waiting = waitingOf(t, keys, crossSite)
+    const needs = exceptionPath && (t.status === 'requested' || t.status === 'approved' || t.status === 'failed') ? await exceptionNeeds(db, t, now) : []
+    const exceptions: ExceptionView[] = needs.map(n => ({
+      staffId: n.staffId, name: personOf(people, n.staffId).name, party: n.party, bedLabel: beds.get(n.bedId)?.label ?? '', siteId: n.siteId, siteName: sites.get(n.siteId)?.name ?? '',
+      state: n.state, failed: n.failed, reasons: n.reasons, declinedReason: n.declinedReason ?? null,
+      viewerCanDecide: n.state === 'waiting' && can(actor, 'requests_waitlist.approve_exception', { siteId: n.siteId })
+        && ![t.staffId, t.otherStaffId, t.requestedByStaffId].some(x => !!x && x === actor.staffId),
+    }))
+    // A Policy Approver who has to decide on someone is told who it is, as the approvals inbox already does (the name is not directory data for them).
+    for (const e of exceptions) {
+      if (e.viewerCanDecide && e.name === 'Resident') {
+        const [p] = await db.select({ n: staffProfile.fullName }).from(staffProfile).where(eq(staffProfile.id, e.staffId)).limit(1)
+        if (p) e.name = p.n
+      }
+    }
+    let askableBeds: TransferListRow['askableBeds'] = []
+    if (exceptionPath && t.kind === 'transfer' && open && info && keys.destination.viewerCanGive) {
+      const today = localDate(now, dstSite?.tz ?? info.siteTimeZone)
+      const to = endOf.get(t.stayId) ?? undefined
+      if (!to || to > today) askableBeds = await askable(db, t, today, to, now)
+    }
+    const waiting = exceptionWaiting(exceptions) ?? waitingOf(t, keys, crossSite)
     out.push({
       id: t.id, kind: t.kind, status: t.status, siteId: t.siteId, siteName: srcSite?.name ?? '', destinationSiteId: t.destinationSiteId, destinationSiteName: dstSite?.name ?? '',
       crossSite, keys, waiting,
@@ -130,7 +187,8 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       failureReason: t.status === 'failed' ? t.failureReason : null,
       failureNext: t.status === 'failed' ? ((t.failureDetail as { next?: string } | null)?.next ?? null) : null,
       failedAt: t.failedAt?.toISOString() ?? null, executedAt: t.executedAt?.toISOString() ?? null, decisionReason: t.decisionReason,
-      suggestions,
+      suggestions, exceptions, exceptionPath, askableBeds,
+      raisedBy: t.requestedByStaffId && t.requestedByStaffId !== t.staffId && t.requestedByStaffId !== t.otherStaffId ? { name: personOf(people, t.requestedByStaffId).name } : null,
       viewerParty: t.kind === 'swap' && actor.role === 'Res' && actor.staffId ? (actor.staffId === t.staffId ? 'a' : actor.staffId === t.otherStaffId ? 'b' : null) : null,
       can: {
         approve: keys.source.viewerCanGive || keys.destination.viewerCanGive,
@@ -146,6 +204,37 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
 }
 
 const either = (actor: Actor, action: 'transfers_swaps.approve', a: string, b: string) => can(actor, action, { siteId: a }) || can(actor, action, { siteId: b })
+
+/** Ready, free beds of the destination site that this person fails only by a rule a Policy Approver may waive (P-10, proposed, pending client sign-off). */
+async function askable(db: ReturnType<typeof getDb>, t: typeof transferRequest.$inferSelect, from: string, to: string | undefined, now: Date): Promise<TransferListRow['askableBeds']> {
+  const period = claimPeriod(from, to)
+  const candidates = await db.select({ bedId: bedTable.id, code: bedTable.code, roomName: room.name }).from(bedTable).innerJoin(room, eq(room.id, bedTable.roomId))
+    .where(and(
+      eq(bedTable.siteId, t.destinationSiteId), eq(bedTable.state, 'available'), sql`${bedTable.archivedAt} is null`, sql`${room.archivedAt} is null`, sql`${bedTable.id} <> ${t.fromBedId}`,
+      sql`NOT EXISTS (SELECT 1 FROM bed_claim c WHERE c.bed_id = ${bedTable.id} AND c.released_at IS NULL AND c.period && ${period}::daterange)`,
+    )).orderBy(room.name, bedTable.code).limit(40)
+  const out: TransferListRow['askableBeds'] = []
+  for (const cand of candidates) {
+    const e = await checkEligibility(db, t.staffId, cand.bedId, now, { transferId: t.id })
+    if (e && !e.ok && e.exceptionable) out.push({ bedId: cand.bedId, label: `${cand.roomName} · ${cand.code}`, roomName: cand.roomName, code: cand.code, reasons: e.reasons })
+    if (out.length >= 8) break
+  }
+  return out
+}
+
+/** A destination that needs a Policy Approver comes first: nothing else can be finished before that decision. */
+function exceptionWaiting(list: ExceptionView[]): WaitingFor | null {
+  const w = list.find(e => e.state === 'waiting')
+  if (w) {
+    return {
+      text: `Waiting for a Policy Approver exception: ${w.reasons.join('; ')}`, owner: `Policy Approver of ${w.siteName}`,
+      next: `A Policy Approver of ${w.siteName} records the exception with evidence, or declines it. Until then this move cannot go ahead. Proposed policy, pending client sign-off`,
+    }
+  }
+  const d = list.find(e => e.state === 'declined')
+  if (d) return { text: `A Policy Approver declined the exception: ${d.declinedReason ?? ''}`.trim(), owner: `Accommodation Admin of ${d.siteName}`, next: 'Choose another bed, or reject the move' }
+  return null
+}
 
 /** Plain words for what an unfinished request is waiting for: who owns the next step and what they do. Null once it is done or dead. */
 function waitingOf(t: typeof transferRequest.$inferSelect, keys: { source: ApprovalKey; destination: ApprovalKey }, crossSite: boolean): WaitingFor | null {
