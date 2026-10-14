@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
+import { reauthEnabled } from '@/server/auth/reauth'
 import { getDb } from '@/server/db/client'
 import { can } from '@/server/policy'
 import { listCases } from '@/server/queries/emergency/cases'
@@ -25,6 +26,8 @@ export default async function EmergencyPage() {
     listTasks(db, actor, now, {}),
   ])
   const canInitiate = can(actor, 'emergency_checkin.initiate')
+  // D-03 / P-02 (proposed, pending client sign-off): the password field shows only for the actions the configuration lists.
+  const [needsInitiatePassword, needsDecidePassword] = await Promise.all([reauthEnabled('emergency.initiate'), reauthEnabled('emergency.decide')])
   const pending = items.filter(i => i.status === 'pending')
   const decided = items.filter(i => i.status !== 'pending').slice(0, 15)
   const openTasks = tasks.filter(t => !t.doneAt)
@@ -36,7 +39,7 @@ export default async function EmergencyPage() {
 
       {canInitiate && (
         <div style={{ maxWidth: 640 }}>
-          <InitiateForm approver={primaryLabel(routeFor(actor.role))} deadlineHours={timing.deadlineHours} />
+          <InitiateForm approver={primaryLabel(routeFor(actor.role))} deadlineHours={timing.deadlineHours} needsPassword={needsInitiatePassword} />
         </div>
       )}
 
@@ -45,7 +48,7 @@ export default async function EmergencyPage() {
           <GlassCard title="Waiting for a decision" subtitle={pending.length ? `${pending.length} open` : undefined} flush={pending.length === 0}>
             {pending.length === 0
               ? <div className="tbl-empty">No emergency check-ins are waiting for a decision.</div>
-              : <div className="stack">{pending.map(c => <CaseCard key={c.id} c={c} />)}</div>}
+              : <div className="stack">{pending.map(c => <CaseCard key={c.id} c={c} needsPassword={needsDecidePassword} />)}</div>}
           </GlassCard>
 
           <GlassCard title="Relocation and checkout tasks" subtitle="After a rejection. The resident is never moved automatically." strong flush={openTasks.length === 0}>

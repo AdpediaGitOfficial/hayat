@@ -14,7 +14,8 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Request · Grand Hyatt Staff Accommodation' }
 
 export default async function RequestPage({ params }: { params: { id: string } }) {
-  const cur = await requirePage('requests_waitlist.view')
+  // Scope is decided in getRequestDetail: requests_waitlist.view, or being allowed to decide this request now (a backup approver from the backup level).
+  const cur = await requirePage()
   if (!isUuid(params.id)) notFound()
   const db = getDb()
   const d = await getRequestDetail(db, cur.rc, params.id, cur.rc.clock.now())

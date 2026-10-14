@@ -23,11 +23,22 @@ export function handler(path: string, method: string): H {
 
 export interface CallOpts { params?: Record<string, string>; body?: unknown; query?: Record<string, string> }
 
+/**
+ * D-03 / P-02: these routes re-ask for the signed-in person's password (default ON). The tests' people all use PASSWORD, so the client types it
+ * for them unless a test passes its own `confirmPassword` (to prove a wrong or missing one is refused).
+ */
+const REAUTH_PATHS = new Set(['users/[id]/role-changes', 'role-changes/[id]/decide', 'grants', 'grants/[id]/decide', 'grants/[id]/revoke'])
+export function withPassword(method: string, path: string, body: unknown): unknown {
+  if (method !== 'POST' || !body || typeof body !== 'object' || Array.isArray(body) || 'confirmPassword' in body) return body
+  const needs = REAUTH_PATHS.has(path) || (path === 'users' && !!(body as { initialRole?: unknown }).initialRole)
+  return needs ? { ...body, confirmPassword: PASSWORD } : body
+}
+
 /** A thin client over the WP-C routes for one signed-in cookie (or none). */
 export function acc(cookie?: string) {
   const go = (method: string, path: string, o: CallOpts = {}) => {
     const url = '/api/v1/access/' + path.replace(/\[(\w+)\]/g, (_m, k: string) => o.params?.[k] ?? randomUUID()) + (o.query ? '?' + new URLSearchParams(o.query).toString() : '')
-    return call(handler(path, method), { method, path: url, body: method === 'GET' ? undefined : (o.body ?? {}), cookie, params: o.params })
+    return call(handler(path, method), { method, path: url, body: method === 'GET' ? undefined : withPassword(method, path, o.body ?? {}), cookie, params: o.params })
   }
   return {
     get: (path: string, o?: CallOpts) => go('GET', path, o),

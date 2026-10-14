@@ -10,6 +10,7 @@ export const POST = route({
   name: 'access.grants.revoke',
   access: { kind: 'action', action: 'users_roles.approve_grant' },
   body,
+  reauth: { action: 'access.grant' },
   handler: async (rc, b, _req, _reply, { params }) => {
     const grantId = pathId(params)
     return grantId ? revokeGrant(rc, { ...b, grantId }) : fail.notFound()

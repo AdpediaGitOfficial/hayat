@@ -12,6 +12,7 @@ import { requestExceptionAsk } from '@/server/db/schema.requests'
 import type { CommandContext, Tx } from '@/server/command/context'
 import { fail, failure, type Failure } from '@/server/command/result'
 import { notSelf } from '@/server/command/authorize'
+import { authorizeEscalated } from '@/server/approvals/escalation'
 import { notify } from '@/server/notify'
 import { STAY_TYPES } from '@/domain/enums'
 import { idSchema, reasonSchema, optionalText, todayInZone } from '@/server/commands/property/shared'
@@ -66,6 +67,16 @@ export async function bedLabel(tx: Pick<Tx, 'select'>, bedId: string) {
 /** The requester: the person themselves, or the officer who submitted on their behalf. */
 export const isRequester = (c: Pick<CommandContext, 'actor' | 'user'>, r: Pick<RequestRow, 'staffId' | 'submittedBy'>): boolean =>
   (c.actor.staffId !== undefined && r.staffId === c.actor.staffId) || r.submittedBy === c.user.id
+
+/**
+ * May this actor approve, reject or send back this request right now? Accommodation Admin and Super Admin at any time within scope;
+ * a Policy Approver or Backup Approver only from the backup level of the approval clock and only while `approvals.escalation_backup` is
+ * on (P-01, proposed, pending client sign-off). The same rule the approvals inbox applies (src/server/approvals/escalation.ts).
+ * The clock runs from when the request reached the admin: filing, or the last resubmission or exception decision (`updatedAt`).
+ */
+export function authorizeRequestDecision(c: CommandContext, r: Pick<RequestRow, 'siteId' | 'updatedAt'>): Promise<Failure | undefined> {
+  return authorizeEscalated(c, { primary: 'requests_waitlist.approve', siteId: r.siteId, since: r.updatedAt, first: { text: 'the Accommodation Admin', owner: 'Accommodation Admin' } })
+}
 
 /**
  * Separation of duties for a decision on a request (D-26): never the person it is about, and never the officer who

@@ -21,7 +21,7 @@ export function EscalationChip({ level, reminders }: { level: number; reminders:
   return <Badge tone="neutral">Within deadline</Badge>
 }
 
-export function CaseCard({ c, detail }: { c: CaseView; detail?: boolean }) {
+export function CaseCard({ c, detail, needsPassword = false }: { c: CaseView; detail?: boolean; needsPassword?: boolean }) {
   const pending = c.status === 'pending'
   const created = Date.parse(c.createdAt), deadline = Date.parse(c.deadlineAt)
   const viaLabel = c.decidedVia ? (c.decidedVia === 'AA' ? ROLE_LABEL.AA : CAP_LABEL[c.decidedVia]) : null
@@ -52,7 +52,7 @@ export function CaseCard({ c, detail }: { c: CaseView; detail?: boolean }) {
 
         {pending && !c.eligibility.ok && <Alert tone="warning" title="Rules that would have failed at check-in" detail={c.eligibility.reasons.join('; ')} />}
 
-        {pending && c.me.canDecide && <DecideActionsFor c={c} />}
+        {pending && c.me.canDecide && <DecideActionsFor c={c} needsPassword={needsPassword} />}
         {pending && !c.me.canDecide && <Blocked why={c.me.why} owner={c.me.owner} next={c.me.next} />}
 
         {!pending && c.decidedAt && (
@@ -73,6 +73,6 @@ export function CaseCard({ c, detail }: { c: CaseView; detail?: boolean }) {
   )
 }
 
-function DecideActionsFor({ c }: { c: CaseView }) {
-  return <DecideActions caseId={c.id} who={c.staffName} bedCode={c.bedCode} failedReasons={c.eligibility.ok ? [] : c.eligibility.reasons} />
+function DecideActionsFor({ c, needsPassword }: { c: CaseView; needsPassword: boolean }) {
+  return <DecideActions caseId={c.id} who={c.staffName} bedCode={c.bedCode} failedReasons={c.eligibility.ok ? [] : c.eligibility.reasons} needsPassword={needsPassword} />
 }

@@ -90,6 +90,8 @@ test.describe.serial('emergency check-in', () => {
       await expect(bed).toContainText(`EM-${tag}-${n + 1}`)
       await bed.selectOption((await bed.locator('option', { hasText: `EM-${tag}-${n + 1}` }).first().getAttribute('value'))!)
       await page.getByLabel('What happened?').fill('Water leak in block D, rooms unusable tonight')
+      // D-03 (P-02, proposed, pending client sign-off): starting an emergency check-in asks for the password again
+      await page.getByLabel('Confirm with your password').fill(PASSWORD)
       await page.getByRole('button', { name: 'Create provisional stay' }).click()
       await expect(page.getByText('Provisional stay created')).toBeVisible()
       await expect(page.getByText(/Status: Provisional/)).toBeVisible()

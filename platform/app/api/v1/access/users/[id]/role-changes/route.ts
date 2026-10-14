@@ -10,6 +10,7 @@ export const POST = route({
   name: 'access.role_changes.request',
   access: { kind: 'action', action: 'users_roles.manage_roles_and_scope' },
   body,
+  reauth: { action: 'access.role_change' },
   handler: async (rc, b, _req, _reply, { params }) => {
     const userId = pathId(params)
     return userId ? requestRoleChange(rc, { ...b, userId }) : fail.notFound()

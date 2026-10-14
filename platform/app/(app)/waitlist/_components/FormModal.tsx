@@ -8,7 +8,7 @@ import { Problem } from './Problem'
 export interface FieldDef {
   name: string
   label: string
-  kind: 'text' | 'textarea' | 'date' | 'select'
+  kind: 'text' | 'textarea' | 'date' | 'select' | 'password'
   options?: { value: string; label: string }[]
   optional?: boolean
   hint?: string
@@ -63,7 +63,7 @@ export function FormModal({ open, onClose, title, subtitle, fields, submitLabel,
                   <option value="">Choose…</option>
                   {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
-              ) : <Input type={f.kind === 'date' ? 'date' : 'text'} value={values[f.name] ?? ''} onChange={e => setValues(v => ({ ...v, [f.name]: e.target.value }))} />}
+              ) : <Input type={f.kind === 'date' ? 'date' : f.kind === 'password' ? 'password' : 'text'} autoComplete={f.kind === 'password' ? 'current-password' : undefined} value={values[f.name] ?? ''} onChange={e => setValues(v => ({ ...v, [f.name]: e.target.value }))} />}
           </Field>
         ))}
       </div>

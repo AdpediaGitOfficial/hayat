@@ -1,4 +1,5 @@
 import { requirePage } from '@/server/auth/page'
+import { reauthEnabled } from '@/server/auth/reauth'
 import { decide } from '@/server/policy'
 import { listUsers, type UserListRow } from '@/server/queries/access/users'
 import { listPendingApprovals } from '@/server/queries/access/approvals'
@@ -43,7 +44,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Record
         summary="Accounts are created by an administrator and handed over with a temporary password. Roles and capabilities need a second Super Admin; capabilities add actions, never sites."
         actions={<>
           {maySeeApprovals && <LinkButton href="/users/approvals">Approvals{waiting > 0 ? ` (${waiting})` : ''}</LinkButton>}
-          {mayCreate && <NewAccountButton sites={sites} buildings={buildings} canRequestRole={decide(actor, 'users_roles.manage_roles_and_scope').allowed} siteRequired={actor.sites !== 'all'} />}
+          {mayCreate && <NewAccountButton sites={sites} buildings={buildings} canRequestRole={decide(actor, 'users_roles.manage_roles_and_scope').allowed} siteRequired={actor.sites !== 'all'} needsRolePassword={await reauthEnabled('access.role_change')} />}
         </>} />
 
       {actor.sites !== 'all' && <Alert tone="info" title="You see accounts in your own sites" detail="Administrator accounts and accounts that also belong to other sites can only be changed by a Super Admin." />}

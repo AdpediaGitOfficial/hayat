@@ -1,7 +1,8 @@
 import type { Capability, Role } from '@/domain/enums'
 import type { ApprovalClock, ApprovalLevel } from '@/domain/approvals'
 import type { Db } from '@/server/db/client'
-import type { Action } from '@/server/policy'
+import type { Action, Actor } from '@/server/policy'
+import type { DecidableContext } from './escalation'
 
 /** Who may decide at an escalation level (0 primary, 1 backup, 2 final), and who gets the reminder when it gets there. */
 export interface Decider {
@@ -29,6 +30,14 @@ export interface ApprovalDraft {
   href: string
   /** Sources with their own clock (emergency: hours, not business days) supply it; the generic sweep then skips the item. */
   ownClock?: ApprovalClock
+  /**
+   * Exactly who may decide this item right now, for sources whose rule is more than "holds the action at a level the clock has reached"
+   * (escalation backup, P-01; the emergency route). When present the inbox uses it for the "mine" flag, so the card and the command
+   * cannot disagree. It must apply the same rule the command applies, scope and separation of duties included.
+   */
+  decidable?: (actor: Actor, ctx: DecidableContext) => boolean
+  /** The words for "you are in scope but cannot decide it yet", when the generic "waiting for the next level" would be untrue. */
+  whyNot?: (actor: Actor, ctx: DecidableContext) => string | undefined
 }
 
 export interface ApprovalSource {

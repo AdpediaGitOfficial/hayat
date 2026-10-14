@@ -11,6 +11,7 @@ import { requestExceptionAsk } from '@/server/db/schema.requests'
 import type { Db } from '@/server/db/client'
 import type { RequestContext } from '@/server/command/context'
 import { can } from '@/server/policy'
+import { standingNow } from '@/server/approvals/escalation'
 import { getConfig } from '@/server/config/registry'
 import { loadCalendar } from '@/server/eligibility'
 import { approvalClock, isUrgent, type ApprovalClock } from '@/domain/approvals'
@@ -72,8 +73,11 @@ export async function getRequestDetail(db: Reader, v: Viewer, id: string, now: D
     .where(eq(accommodationRequest.id, id))
   if (!row) return undefined
   const r = row.r
-  // Scope: out-of-scope looks exactly like a missing record (AT-002).
-  if (!can(v.actor, 'requests_waitlist.view', { siteId: r.siteId, ownerStaffId: r.staffId })) return undefined
+  // May this viewer decide the request right now? The Accommodation Admin always; a Policy Approver / Backup Approver from the backup level
+  // (P-01, proposed, pending client sign-off). The same function the commands and the inbox use.
+  const decideNow = (await standingNow(db, v.actor, { primary: 'requests_waitlist.approve', siteId: r.siteId, since: r.updatedAt, now })).ok
+  // Scope: out-of-scope looks exactly like a missing record (AT-002). Someone who may decide it now can open the page the inbox links to.
+  if (!can(v.actor, 'requests_waitlist.view', { siteId: r.siteId, ownerStaffId: r.staffId }) && !(decideNow && r.status === 'submitted')) return undefined
 
   const isRequester = (v.actor.staffId !== undefined && r.staffId === v.actor.staffId) || r.submittedBy === v.user.id
   const canApproveRole = can(v.actor, 'requests_waitlist.approve', { siteId: r.siteId })
@@ -124,7 +128,7 @@ export async function getRequestDetail(db: Reader, v: Viewer, id: string, now: D
 
   const open = r.status === 'submitted' || r.status === 'pending_approval' || r.status === 'changes_requested'
   const sla = await getConfig(db, 'timers.routine_sla_business_days')
-  const clock = (canApproveRole || canExceptionRole) && (r.status === 'submitted' || r.status === 'pending_approval')
+  const clock = (canApproveRole || canExceptionRole || decideNow) && (r.status === 'submitted' || r.status === 'pending_approval')
     ? approvalClock(r.updatedAt.getTime(), now.getTime(), sla, await loadCalendar(db, r.siteId)) : null
   const grantBlocked = (v.actor.staffId !== undefined && r.staffId === v.actor.staffId) || r.submittedBy === v.user.id
   return {
@@ -137,13 +141,13 @@ export async function getRequestDetail(db: Reader, v: Viewer, id: string, now: D
     createdAt: r.createdAt.toISOString(), decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
     reservation: resv, exception, clock,
     can: {
-      approve: canApproveRole && r.status === 'submitted' && !sodBlocked,
+      approve: decideNow && r.status === 'submitted' && !sodBlocked,
       askException: canApproveRole && r.status === 'submitted' && !sodBlocked,
       grantException: canExceptionRole && (r.status === 'pending_approval' || r.status === 'submitted') && !grantBlocked,
       edit: isRequester && r.status === 'changes_requested',
       resubmit: isRequester && r.status === 'changes_requested',
       cancel: open && (isRequester || canApproveRole),
-      whyNot: sodBlocked && (canApproveRole)
+      whyNot: sodBlocked && (canApproveRole || decideNow)
         ? (v.actor.staffId === r.staffId ? 'This request is about you, so a different Accommodation Admin decides it (separation of duties, D-26).' : 'You filed this request on someone\'s behalf, so a different Accommodation Admin decides it (separation of duties, D-26).')
         : grantBlocked && canExceptionRole ? 'This request is about you or was filed by you, so a different Policy Approver decides the exception (D-26).' : null,
     },

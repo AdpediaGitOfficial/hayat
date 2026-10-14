@@ -2,18 +2,20 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { accommodationRequest } from '@/server/db/schema'
 import { audit } from '@/server/audit'
-import { authorize } from '@/server/command/authorize'
+import { noDecisionGrant } from '@/server/approvals/escalation'
 import { runCommand } from '@/server/command/run'
 import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, ok, type Failure, type Result } from '@/server/command/result'
 import { fmtDate } from '@/domain/time'
-import { decisionSod, idSchema, loadRequest, notifyRequester, reasonSchema, revisionOf, snapRequest, withdrawOpenAsk, wrongState, type RequestRow } from './shared'
+import { authorizeRequestDecision, decisionSod, idSchema, loadRequest, notifyRequester, reasonSchema, revisionOf, snapRequest, withdrawOpenAsk, wrongState, type RequestRow } from './shared'
 
 /** The request an Accommodation Admin is deciding: visible and in scope, not their own, and still undecided. Returns it locked. */
 export async function loadForDecision(c: CommandContext, id: string, verb: string, wanted: string, allowed: readonly RequestRow['status'][]): Promise<Failure | RequestRow> {
+  const none = noDecisionGrant(c.actor, 'requests_waitlist.approve')
+  if (none) return none
   const peek = await loadRequest(c.tx, id)
   if (!peek) return fail.notFound()
-  const denied = authorize(c, 'requests_waitlist.approve', { siteId: peek.siteId })
+  const denied = await authorizeRequestDecision(c, peek)
   if (denied) return denied
   const sod = decisionSod(c, peek, verb)
   if (sod) return sod

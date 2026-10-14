@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
+import { reauthEnabled } from '@/server/auth/reauth'
 import { getDb } from '@/server/db/client'
 import { getCase } from '@/server/queries/emergency/cases'
 import { listTasks } from '@/server/queries/emergency/tasks'
@@ -37,7 +38,7 @@ export default async function EmergencyCase({ params }: { params: { id: string }
         summary={`${c.employeeId} · ${c.bedCode} · ${c.siteName}`} actions={<Link href="/emergency" className="btn ghost">All emergency check-ins</Link>} />
       <div className="grid two">
         <div className="stack">
-          <CaseCard c={c} detail />
+          <CaseCard c={c} detail needsPassword={await reauthEnabled('emergency.decide')} />
           {tasks.map(t => (
             <GlassCard key={t.id} title="Relocation or checkout task" subtitle={t.doneAt ? 'Done' : 'Open'} strong>
               <div className="stack" style={{ gap: 8 }}>

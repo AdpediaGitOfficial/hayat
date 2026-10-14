@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 /** Send the request back to the requester with a reason. */
 export const POST = route({
   name: 'requests.changes',
-  access: { kind: 'action', action: 'requests_waitlist.approve' },
+  access: { kind: 'action', action: 'approvals_inbox.view' },
   body: decisionInput.omit({ requestId: true }),
   handler: (rc, body, _req, _r, { params }) => {
     const requestId = idParam(params)

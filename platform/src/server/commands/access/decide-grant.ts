@@ -40,7 +40,7 @@ export async function decideGrant(rc: RequestContext, raw: DecideInput): Promise
     if (raw.decision === 'reject') {
       if (!note) return fail.invalid('Say why you are rejecting it', { note: 'Required' })
       await c.tx.update(capabilityGrant).set({ status: 'rejected', checkerId: c.user.id, decidedAt: c.now }).where(eq(capabilityGrant.id, g.id))
-      await audit(c, { action: 'access.grant.rejected', entityType: 'capability_grant', entityId: g.id, reason: note, after: base })
+      await audit(c, { action: 'access.grant.rejected', entityType: 'capability_grant', entityId: g.id, reason: note, before: { status: 'pending' }, after: { status: 'rejected', ...base } })
       return ok({ grantId: g.id, status: 'rejected', startsAt: base.startsAt, expiresAt: base.expiresAt }, 'Rejected. The capability was not granted')
     }
 
@@ -52,7 +52,7 @@ export async function decideGrant(rc: RequestContext, raw: DecideInput): Promise
       return failure('conflict', 'The account was deactivated after the request was filed', { owner: 'Accommodation Admin or Super Admin', next: 'Reactivate the account, then file the request again' })
     }
     await c.tx.update(capabilityGrant).set({ status: 'active', checkerId: c.user.id, decidedAt: c.now }).where(eq(capabilityGrant.id, g.id))
-    await audit(c, { action: 'access.grant.approved', entityType: 'capability_grant', entityId: g.id, reason: note ?? g.reason, after: base })
+    await audit(c, { action: 'access.grant.approved', entityType: 'capability_grant', entityId: g.id, reason: note ?? g.reason, before: { status: 'pending' }, after: { status: 'active', ...base } })
     return ok({ grantId: g.id, status: 'active', startsAt: base.startsAt, expiresAt: base.expiresAt },
       g.startsAt.getTime() > c.now.getTime() ? 'Approved. It starts on its start date' : 'Approved. It is in effect now')
   })

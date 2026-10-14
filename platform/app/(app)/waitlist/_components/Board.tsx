@@ -18,7 +18,7 @@ type Modal =
 const DAY = 86_400_000
 
 /** The admin view of the waitlist: the queue of each site in order, and the offers in flight with their timers. */
-export function Board({ queues, sites, categories, perms }: { queues: SiteQueue[]; sites: { id: string; name: string }[]; categories: string[]; perms: Perms }) {
+export function Board({ queues, sites, categories, perms, needsOverridePassword = false }: { queues: SiteQueue[]; sites: { id: string; name: string }[]; categories: string[]; perms: Perms; needsOverridePassword?: boolean }) {
   const [modal, setModal] = useState<Modal>()
   const close = () => setModal(undefined)
   const total = queues.reduce((n, q) => n + q.entries.length, 0)
@@ -32,7 +32,7 @@ export function Board({ queues, sites, categories, perms }: { queues: SiteQueue[
       {queues.map(q => <SiteBlock key={q.siteId} q={q} perms={perms} open={setModal} />)}
 
       {modal?.kind === 'add' && <AddModal sites={sites} onClose={close} />}
-      {modal?.kind === 'offer' && <OfferModal entry={modal.entry} onClose={close} />}
+      {modal?.kind === 'offer' && <OfferModal entry={modal.entry} needsOverridePassword={needsOverridePassword} onClose={close} />}
       {modal?.kind === 'renew' && <RenewModal entry={modal.entry} onClose={close} />}
       {modal?.kind === 'priority' && <PriorityModal entry={modal.entry} categories={categories} onClose={close} />}
       {modal?.kind === 'decide' && <DecideModal entry={modal.entry} onClose={close} />}
@@ -123,7 +123,7 @@ function AddModal({ sites, onClose }: { sites: { id: string; name: string }[]; o
   )
 }
 
-function OfferModal({ entry, onClose }: { entry: QueueEntryView; onClose: () => void }) {
+function OfferModal({ entry, needsOverridePassword, onClose }: { entry: QueueEntryView; needsOverridePassword: boolean; onClose: () => void }) {
   const [beds, setBeds] = useState<BedChoice[]>()
   const [loadErr, setLoadErr] = useState<ApiFail>()
   const [override, setOverride] = useState(false)
@@ -135,13 +135,15 @@ function OfferModal({ entry, onClose }: { entry: QueueEntryView; onClose: () => 
   const fields = [
     { name: 'bedId', label: 'Bed to hold', kind: 'select' as const, options: (beds ?? []).filter(b => !b.blocked).map(b => ({ value: b.bedId, label: `${b.code} · ${b.roomName}${b.state === 'available' ? '' : ' (not ready yet, later start)'}` })) },
     ...(override ? [{ name: 'overrideReason', label: 'Reason for skipping the queue order', kind: 'text' as const, hint: 'Someone is ahead of this person. The reason is kept in the audit log.' }] : []),
+    // D-03 / P-02 (proposed, pending client sign-off): skipping the queue order asks for the password again, when the configuration lists it.
+    ...(override && needsOverridePassword ? [{ name: 'confirmPassword', label: 'Confirm with your password', kind: 'password' as const, hint: 'Skipping the queue order is a high-risk action, so we ask again who you are.' }] : []),
   ]
   return (
     <FormModal open onClose={onClose} title={`Offer a bed to ${entry.name}`}
       subtitle="The bed is held for them and nobody else can be given it. The 48 hours start when they open the offer or you record that they were told."
       submitLabel="Hold this bed" fields={fields}
       run={async v => {
-        const r = await post(`/api/v1/waitlist/${entry.id}/offer`, { bedId: v.bedId, overrideReason: v.overrideReason || undefined })
+        const r = await post(`/api/v1/waitlist/${entry.id}/offer`, { bedId: v.bedId, overrideReason: v.overrideReason || undefined, ...(v.overrideReason && v.confirmPassword ? { confirmPassword: v.confirmPassword } : {}) })
         if (!r.ok && (r.detail as { reason?: string } | undefined)?.reason === 'ahead_in_queue') setOverride(true)
         return r
       }}>

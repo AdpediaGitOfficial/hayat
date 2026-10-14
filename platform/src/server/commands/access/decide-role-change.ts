@@ -50,7 +50,7 @@ export async function decideRoleChange(rc: RequestContext, raw: Input): Promise<
       await c.tx.update(roleChangeRequest).set({ status: 'rejected', checkerId: c.user.id, decidedAt: c.now, decisionNote: note }).where(eq(roleChangeRequest.id, req.id))
       await audit(c, {
         action: 'access.role_change.rejected', entityType: 'role_change_request', entityId: req.id, siteId: req.siteId ?? undefined, reason: note,
-        after: { targetUserId: target.id, targetUsername: target.username, kind: req.kind, ...spec, makerId: req.makerId },
+        before: { status: 'pending' }, after: { status: 'rejected', targetUserId: target.id, targetUsername: target.username, kind: req.kind, ...spec, makerId: req.makerId },
       })
       return ok({ requestId: req.id, status: 'rejected', sessionsEnded: 0 }, 'Rejected. Nothing changed')
     }
@@ -86,7 +86,7 @@ export async function decideRoleChange(rc: RequestContext, raw: Input): Promise<
 
     await audit(c, {
       action: 'access.role_change.approved', entityType: 'role_change_request', entityId: req.id, siteId: req.siteId ?? undefined, reason: note ?? req.reason,
-      after: { targetUserId: target.id, targetUsername: target.username, kind: req.kind, ...spec, assignmentId, makerId: req.makerId, sessionsEnded: ended },
+      before: { status: 'pending' }, after: { status: 'approved', targetUserId: target.id, targetUsername: target.username, kind: req.kind, ...spec, assignmentId, makerId: req.makerId, sessionsEnded: ended },
     })
     await audit(c, {
       action: req.kind === 'add' ? 'access.role.assigned' : 'access.role.removed', entityType: 'user_account', entityId: target.id, siteId: req.siteId ?? undefined, reason: req.reason,

@@ -16,6 +16,7 @@ import { runCommand } from '@/server/command/run'
 import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, ok, type Failure, type Result } from '@/server/command/result'
 import { overlappingClaims, setClaimPeriod, suggestBeds, type BedSuggestion } from '@/server/allocation'
+import { noDecisionGrant, noGrantFor } from '@/server/approvals/escalation'
 import { checkEligibility } from '@/server/eligibility'
 import { getConfig } from '@/server/config/registry'
 import { notify } from '@/server/notify'
@@ -54,6 +55,9 @@ const REQUESTERS = ['reservations_stays.request_extension', 'reservations_stays.
 
 export function requestExtension(rc: RequestContext, i: RequestExtensionInput): Promise<Result<RequestExtensionOut>> {
   return runCommand(rc, async c => {
+    // Someone who may never request or approve an extension learns nothing about the stay (a real one and a missing one answer alike).
+    const none = noGrantFor(c.actor, REQUESTERS, ['reservations_stays.view'])
+    if (none) return none
     const s = await loadStayLocked(c.tx, i.stayId)
     if (!s) return fail.notFound()
     const denied = authorizeAny(c, REQUESTERS, { siteId: s.siteId, ownerStaffId: s.staffId })
@@ -126,6 +130,9 @@ export const approveInput = z.object({ id: idSchema, note: z.string().trim().max
 export type ApproveExtensionInput = z.infer<typeof approveInput>
 
 async function loadDecidable(c: CommandContext, id: string): Promise<{ e: typeof extensionRequest.$inferSelect } | Failure> {
+  // No grant to decide extensions at all: "forbidden" before the record is looked up, so the answer never says whether it exists.
+  const none = noDecisionGrant(c.actor, ['reservations_stays.approve_extension', 'reservations_stays.approve_extension_beyond_policy'])
+  if (none) return none
   const [e] = await c.tx.select().from(extensionRequest).where(eq(extensionRequest.id, id)).limit(1).for('update')
   if (!e) return fail.notFound()
   const denied = await authorizeDecision(c, { kind: e.beyondPolicy ? 'extension_beyond' : 'extension', siteId: e.siteId, since: e.createdAt })

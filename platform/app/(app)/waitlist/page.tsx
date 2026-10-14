@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
+import { reauthEnabled } from '@/server/auth/reauth'
 import { getDb } from '@/server/db/client'
 import { getConfig } from '@/server/config/registry'
 import { can } from '@/server/policy'
@@ -35,5 +36,5 @@ export default async function WaitlistPage() {
     perms.add ? selectableSites(actor, 'requests_waitlist.submit') : Promise.resolve([]),
     getConfig(db, 'eligibility.priority_categories'),
   ])
-  return <Board queues={queues} sites={sites.map(s => ({ id: s.id, name: s.name }))} categories={categories} perms={perms} />
+  return <Board queues={queues} sites={sites.map(s => ({ id: s.id, name: s.name }))} categories={categories} perms={perms} needsOverridePassword={await reauthEnabled('waitlist.queue_override')} />
 }

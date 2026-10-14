@@ -39,7 +39,7 @@ describe('approvals inbox: request and exception sources', () => {
     const refs = list.filter(i => i.kind === 'request').map(i => i.ref)
     expect(refs).toEqual([urgent, calm])
     const card = list.find(i => i.ref === urgent)!
-    expect(card).toMatchObject({ urgent: true, mine: true, primary: 'Accommodation Admin', backup: 'Policy Approver', current: 'Accommodation Admin', href: `/requests/${urgent}` })
+    expect(card).toMatchObject({ urgent: true, mine: true, primary: 'Accommodation Admin', backup: 'Policy Approver or backup approver', current: 'Accommodation Admin', href: `/requests/${urgent}` })
     expect(card.clock).toMatchObject({ level: 0, label: 'Within SLA' })
     expect((await items(outsider)).map(i => i.ref)).not.toContain(urgent)
     // over the API too

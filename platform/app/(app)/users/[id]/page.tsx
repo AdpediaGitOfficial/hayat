@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
+import { reauthEnabled } from '@/server/auth/reauth'
 import { getUserDetail } from '@/server/queries/access/users'
 import { selectableBuildings, selectableSites } from '@/server/queries/access/sites'
 import { pathId } from '@/server/queries/access/params'
@@ -63,7 +64,7 @@ export default async function UserDetailPage({ params }: { params: { id: string 
 
       <GlassCard title="Roles and scope" subtitle="Only a Super Admin changes these, and only with a second Super Admin's approval">
         {u.canManageRoles && active && (
-          <div style={{ marginBottom: 16 }}><RoleActions userId={u.id} sites={sites} buildings={buildings} assignments={u.roles.map(r => ({ id: r.id, label: roleLabel(r) }))} /></div>
+          <div style={{ marginBottom: 16 }}><RoleActions userId={u.id} sites={sites} buildings={buildings} needsPassword={await reauthEnabled('access.role_change')} assignments={u.roles.map(r => ({ id: r.id, label: roleLabel(r) }))} /></div>
         )}
         {u.roles.length === 0 ? <div className="tbl-empty">No role yet: this person cannot sign in until one is assigned.</div> : (
           <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Role</th><th>Scope</th></tr></thead>
@@ -89,7 +90,7 @@ export default async function UserDetailPage({ params }: { params: { id: string 
       <GlassCard title="Capabilities" subtitle="Extra actions on top of a role. They never add sites.">
         {u.canManageRoles && active && (
           <div style={{ marginBottom: 16 }}>
-            <GrantActions userId={u.id} revocable={u.grants.filter(g => ['pending', 'scheduled', 'active'].includes(g.state)).map(g => ({ id: g.id, label: CAP_LABEL[g.capability], pending: g.state === 'pending' }))} />
+            <GrantActions userId={u.id} needsPassword={await reauthEnabled('access.grant')} revocable={u.grants.filter(g => ['pending', 'scheduled', 'active'].includes(g.state)).map(g => ({ id: g.id, label: CAP_LABEL[g.capability], pending: g.state === 'pending' }))} />
           </div>
         )}
         {u.grants.length === 0 ? <div className="tbl-empty">No capabilities.</div> : (

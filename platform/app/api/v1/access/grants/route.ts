@@ -8,5 +8,6 @@ export const POST = route({
   name: 'access.grants.request',
   access: { kind: 'action', action: 'users_roles.manage_roles_and_scope' },
   body: input,
+  reauth: { action: 'access.grant' },
   handler: (rc, body) => requestGrant(rc, body),
 })

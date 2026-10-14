@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { admin, closeAll } from '../harness'
+import { admin, closeAll, PASSWORD } from '../harness'
 import { mkBed, mkProperty, mkRoom, mkStaff, reserve, occupy } from '../fixtures2'
 import { auditCount, send } from '../property/helpers'
 import { initiateEmergency } from '@/server/commands/emergency/initiate'
@@ -57,7 +57,7 @@ describe('initiate an emergency check-in (D-66 to D-68)', () => {
   it('only holders of the Emergency Check-in capability can initiate: 403 for everyone else, whatever their role', async () => {
     const w = await world()
     const p = await mkStaff()
-    const body = { staffId: p.id, bedId: w.bedIds[0], reason: 'Flood in the lobby' }
+    const body = { staffId: p.id, bedId: w.bedIds[0], reason: 'Flood in the lobby', confirmPassword: PASSWORD }
     for (const who_ of [w.aa, w.pa, w.backup, w.sa, await who('Rec', { siteIds: [w.siteId] })]) {
       const r = await send(initiateRoute, who_, { body })
       expect(r.status, `${who_.role}`).toBe(403)
@@ -71,7 +71,7 @@ describe('initiate an emergency check-in (D-66 to D-68)', () => {
   it('a validation failure names the field; a reason is mandatory', async () => {
     const w = await world()
     const p = await mkStaff()
-    const r = await send(initiateRoute, w.rec, { body: { staffId: p.id, bedId: w.bedIds[0], reason: '  ' } })
+    const r = await send(initiateRoute, w.rec, { body: { staffId: p.id, bedId: w.bedIds[0], reason: '  ', confirmPassword: PASSWORD } })
     expect(r.status).toBe(422)
     expect(r.body.fields.reason).toBeTruthy()
   })
@@ -99,7 +99,7 @@ describe('initiate an emergency check-in (D-66 to D-68)', () => {
     const w = await world(1)
     const other = await mkProperty({ beds: 1 })
     const p = await mkStaff()
-    const r = await send(initiateRoute, w.rec, { body: { staffId: p.id, bedId: other.bedIds[0], reason: 'Fire in the other site' } })
+    const r = await send(initiateRoute, w.rec, { body: { staffId: p.id, bedId: other.bedIds[0], reason: 'Fire in the other site', confirmPassword: PASSWORD } })
     expect(r.status).toBe(404)
     expect(await bedState(other.bedIds[0])).toBe('available')
   })

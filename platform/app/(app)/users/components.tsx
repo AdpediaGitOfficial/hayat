@@ -2,7 +2,7 @@
 /** Interactive pieces of the Users & access screens. Every failure shows reason + owner + next action (D-93). */
 import { useRouter } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
-import { Alert, Button, Field, Input, Select, Textarea, useToast } from '@/ui'
+import { Alert, Button, ConfirmPassword, Field, Input, Select, Textarea, useToast } from '@/ui'
 import { Modal } from './portal-modal'
 import { post, type ApiFail, type ApiResult } from '@/ui/api'
 import { ROLES, CAPABILITIES, type Capability, type Role, type ScopeKind } from '@/domain/enums'
@@ -42,24 +42,28 @@ export function TempPasswordDialog({ title, username, password, onDone }: { titl
 
 /* ---------------------------------------------------------------- a reason, then do it */
 
-function ReasonModal({ title, subtitle, confirm, danger, required = true, label = 'Reason', onClose, run }: {
+function ReasonModal({ title, subtitle, confirm, danger, required = true, label = 'Reason', needsPassword = false, onClose, run }: {
   title: string; subtitle?: ReactNode; confirm: string; danger?: boolean; required?: boolean; label?: string
-  onClose: () => void; run: (reason: string) => Promise<ApiResult<unknown>>
+  /** D-03 / P-02 (proposed, pending client sign-off): ask for the password again; the value is passed to `run` as `confirmPassword`. */
+  needsPassword?: boolean
+  onClose: () => void; run: (reason: string, confirmPassword?: string) => Promise<ApiResult<unknown>>
 }) {
   const [reason, setReason] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<ApiFail>()
   async function go() {
     setBusy(true); setErr(undefined)
-    const r = await run(reason.trim())
+    const r = await run(reason.trim(), needsPassword ? password : undefined)
     setBusy(false)
     if (!r.ok) setErr(r)
   }
   return (
     <Modal open onClose={onClose} title={title} subtitle={subtitle}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant={danger ? 'danger' : 'primary'} onClick={go} disabled={busy || (required && !reason.trim())}>{busy ? 'Working…' : confirm}</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant={danger ? 'danger' : 'primary'} onClick={go} disabled={busy || (required && !reason.trim()) || (needsPassword && !password)}>{busy ? 'Working…' : confirm}</Button></>}>
       {err && <Problem f={err} />}
       <Field label={label} optional={!required} error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} autoFocus /></Field>
+      {needsPassword && <ConfirmPassword value={password} onChange={setPassword} error={err?.fields?.confirmPassword} />}
     </Modal>
   )
 }
@@ -151,7 +155,7 @@ export function RoleSpecFields({ value, onChange, sites, buildings, errors }: {
 
 /* ---------------------------------------------------------------- create an account */
 
-export function NewAccountButton({ sites, buildings, canRequestRole, siteRequired }: { sites: SiteOpt[]; buildings: BuildingOpt[]; canRequestRole: boolean; siteRequired: boolean }) {
+export function NewAccountButton({ sites, buildings, canRequestRole, siteRequired, needsRolePassword = false }: { sites: SiteOpt[]; buildings: BuildingOpt[]; canRequestRole: boolean; siteRequired: boolean; needsRolePassword?: boolean }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [employeeId, setEmployeeId] = useState('')
@@ -160,6 +164,7 @@ export function NewAccountButton({ sites, buildings, canRequestRole, siteRequire
   const [reason, setReason] = useState('')
   const [withRole, setWithRole] = useState(false)
   const [spec, setSpec] = useState<RoleSpecValue>(initialSpec())
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<ApiFail>()
   const [issued, setIssued] = useState<Issued & { pending?: boolean }>()
@@ -169,12 +174,13 @@ export function NewAccountButton({ sites, buildings, canRequestRole, siteRequire
     const r = await post<{ temporaryPassword: string; username: string; roleChangeRequestId?: string }>('/api/v1/access/users', {
       employeeId: employeeId.trim(), username: username.trim() || undefined, siteId: siteId || undefined, reason: reason.trim() || undefined,
       initialRole: withRole ? specBody(spec) : undefined,
+      ...(withRole && needsRolePassword ? { confirmPassword: password } : {}),
     })
     setBusy(false)
     if (!r.ok) return setErr(r)
     setOpen(false)
     setIssued({ title: 'Account created', username: r.data.username, password: r.data.temporaryPassword, pending: !!r.data.roleChangeRequestId })
-    setEmployeeId(''); setUsername(''); setReason(''); setWithRole(false)
+    setEmployeeId(''); setUsername(''); setReason(''); setWithRole(false); setPassword('')
   }
   const needSite = siteRequired && !siteId
   return (
@@ -182,7 +188,7 @@ export function NewAccountButton({ sites, buildings, canRequestRole, siteRequire
       <Button variant="primary" icon="userPlus" onClick={() => setOpen(true)}>New account</Button>
       {open && (
         <Modal open onClose={() => setOpen(false)} title="New account" subtitle="For someone who already has a staff record. They sign in with a temporary password and must change it."
-          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !employeeId.trim() || needSite || (withRole && !reason.trim())}>{busy ? 'Creating…' : 'Create account'}</Button></>}>
+          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !employeeId.trim() || needSite || (withRole && (!reason.trim() || (needsRolePassword && !password)))}>{busy ? 'Creating…' : 'Create account'}</Button></>}>
           {err && <Problem f={err} />}
           <Field label="Employee ID" error={err?.fields?.employeeId} hint="The staff record must exist first (Staff)."><Input value={employeeId} onChange={e => setEmployeeId(e.target.value)} autoFocus autoCapitalize="none" /></Field>
           <Field label="Username" optional hint="Defaults to the employee ID" error={err?.fields?.username}><Input value={username} onChange={e => setUsername(e.target.value)} autoCapitalize="none" /></Field>
@@ -199,6 +205,7 @@ export function NewAccountButton({ sites, buildings, canRequestRole, siteRequire
             </>
           )}
           <Field label="Reason" optional={!withRole} error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} /></Field>
+          {withRole && needsRolePassword && <ConfirmPassword value={password} onChange={setPassword} error={err?.fields?.confirmPassword} />}
         </Modal>
       )}
       {issued && <TempPasswordDialog {...issued} onDone={() => { setIssued(undefined); router.refresh() }} />}
@@ -208,24 +215,25 @@ export function NewAccountButton({ sites, buildings, canRequestRole, siteRequire
 
 /* ---------------------------------------------------------------- roles of one account */
 
-export function RoleActions({ userId, assignments, sites, buildings }: {
-  userId: string; assignments: { id: string; label: string }[]; sites: SiteOpt[]; buildings: BuildingOpt[]
+export function RoleActions({ userId, assignments, sites, buildings, needsPassword = false }: {
+  userId: string; assignments: { id: string; label: string }[]; sites: SiteOpt[]; buildings: BuildingOpt[]; needsPassword?: boolean
 }) {
   const router = useRouter()
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const [spec, setSpec] = useState<RoleSpecValue>(initialSpec())
   const [reason, setReason] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<ApiFail>()
   const [removing, setRemoving] = useState<{ id: string; label: string }>()
 
   async function submit() {
     setBusy(true); setErr(undefined)
-    const r = await post<{ warnings: string[] }>(`/api/v1/access/users/${userId}/role-changes`, { kind: 'add', reason: reason.trim(), ...specBody(spec) })
+    const r = await post<{ warnings: string[] }>(`/api/v1/access/users/${userId}/role-changes`, { kind: 'add', reason: reason.trim(), ...specBody(spec), ...(needsPassword ? { confirmPassword: password } : {}) })
     setBusy(false)
     if (!r.ok) return setErr(r)
-    setOpen(false); setReason('')
+    setOpen(false); setReason(''); setPassword('')
     toast(`Sent for approval. ${r.data.warnings.join(' ')}`.trim())
     router.refresh()
   }
@@ -237,16 +245,17 @@ export function RoleActions({ userId, assignments, sites, buildings }: {
       </div>
       {open && (
         <Modal open onClose={() => setOpen(false)} title="Request a role" subtitle="A different Super Admin must approve it before anything changes"
-          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !reason.trim()}>{busy ? 'Sending…' : 'Send for approval'}</Button></>}>
+          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !reason.trim() || (needsPassword && !password)}>{busy ? 'Sending…' : 'Send for approval'}</Button></>}>
           {err && <Problem f={err} />}
           <RoleSpecFields value={spec} onChange={setSpec} sites={sites} buildings={buildings} errors={err?.fields} />
           <Field label="Reason (required)" error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} /></Field>
+          {needsPassword && <ConfirmPassword value={password} onChange={setPassword} error={err?.fields?.confirmPassword} />}
         </Modal>
       )}
       {removing && (
-        <ReasonModal title={`Request removal of ${removing.label}`} subtitle="A different Super Admin must approve it. They are signed out when it is applied." confirm="Send for approval" danger onClose={() => setRemoving(undefined)}
-          run={async reason => {
-            const r = await post(`/api/v1/access/users/${userId}/role-changes`, { kind: 'remove', assignmentId: removing.id, reason })
+        <ReasonModal title={`Request removal of ${removing.label}`} subtitle="A different Super Admin must approve it. They are signed out when it is applied." confirm="Send for approval" danger needsPassword={needsPassword} onClose={() => setRemoving(undefined)}
+          run={async (reason, confirmPassword) => {
+            const r = await post(`/api/v1/access/users/${userId}/role-changes`, { kind: 'remove', assignmentId: removing.id, reason, ...(confirmPassword ? { confirmPassword } : {}) })
             if (r.ok) { setRemoving(undefined); toast('Sent for approval'); router.refresh() }
             return r
           }} />
@@ -257,7 +266,7 @@ export function RoleActions({ userId, assignments, sites, buildings }: {
 
 /* ---------------------------------------------------------------- capability grants of one account */
 
-export function GrantActions({ userId, revocable }: { userId: string; revocable: { id: string; label: string; pending: boolean }[] }) {
+export function GrantActions({ userId, revocable, needsPassword = false }: { userId: string; revocable: { id: string; label: string; pending: boolean }[]; needsPassword?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const [open, setOpen] = useState(false)
@@ -265,6 +274,7 @@ export function GrantActions({ userId, revocable }: { userId: string; revocable:
   const [reason, setReason] = useState('')
   const [startsAt, setStartsAt] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<ApiFail>()
   const [revoking, setRevoking] = useState<{ id: string; label: string; pending: boolean }>()
@@ -272,10 +282,10 @@ export function GrantActions({ userId, revocable }: { userId: string; revocable:
 
   async function submit() {
     setBusy(true); setErr(undefined)
-    const r = await post<{ warnings: string[] }>('/api/v1/access/grants', { userId, capability, reason: reason.trim(), startsAt: iso(startsAt), expiresAt: iso(expiresAt) })
+    const r = await post<{ warnings: string[] }>('/api/v1/access/grants', { userId, capability, reason: reason.trim(), startsAt: iso(startsAt), expiresAt: iso(expiresAt), ...(needsPassword ? { confirmPassword: password } : {}) })
     setBusy(false)
     if (!r.ok) return setErr(r)
-    setOpen(false); setReason(''); setStartsAt(''); setExpiresAt('')
+    setOpen(false); setReason(''); setStartsAt(''); setExpiresAt(''); setPassword('')
     toast(`Sent for approval. ${r.data.warnings.join(' ')}`.trim())
     router.refresh()
   }
@@ -287,7 +297,7 @@ export function GrantActions({ userId, revocable }: { userId: string; revocable:
       </div>
       {open && (
         <Modal open onClose={() => setOpen(false)} title="Request a capability" subtitle="A different Super Admin must approve it before it takes effect"
-          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !reason.trim()}>{busy ? 'Sending…' : 'Send for approval'}</Button></>}>
+          footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={submit} disabled={busy || !reason.trim() || (needsPassword && !password)}>{busy ? 'Sending…' : 'Send for approval'}</Button></>}>
           {err && <Problem f={err} />}
           <Field label="Capability" error={err?.fields?.capability} hint={CAPABILITY_HINT[capability]}>
             <Select value={capability} onChange={e => setCapability(e.target.value as Capability)}>{CAPABILITIES.map(c => <option key={c} value={c}>{CAP_LABEL[c]}</option>)}</Select>
@@ -298,12 +308,13 @@ export function GrantActions({ userId, revocable }: { userId: string; revocable:
             <Field label="Starts" optional hint="Defaults to when it is approved" error={err?.fields?.startsAt}><Input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} /></Field>
             <Field label="Expires" optional hint="Without one it stays until revoked" error={err?.fields?.expiresAt}><Input type="datetime-local" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} /></Field>
           </div>
+          {needsPassword && <ConfirmPassword value={password} onChange={setPassword} error={err?.fields?.confirmPassword} />}
         </Modal>
       )}
       {revoking && (
-        <ReasonModal title={`${revoking.pending ? 'Withdraw' : 'Revoke'} ${revoking.label}`} subtitle={revoking.pending ? 'The request is withdrawn.' : 'It stops working on their next action.'} confirm={revoking.pending ? 'Withdraw' : 'Revoke'} danger onClose={() => setRevoking(undefined)}
-          run={async reason => {
-            const r = await post(`/api/v1/access/grants/${revoking.id}/revoke`, { reason })
+        <ReasonModal title={`${revoking.pending ? 'Withdraw' : 'Revoke'} ${revoking.label}`} subtitle={revoking.pending ? 'The request is withdrawn.' : 'It stops working on their next action.'} confirm={revoking.pending ? 'Withdraw' : 'Revoke'} danger needsPassword={needsPassword} onClose={() => setRevoking(undefined)}
+          run={async (reason, confirmPassword) => {
+            const r = await post(`/api/v1/access/grants/${revoking.id}/revoke`, { reason, ...(confirmPassword ? { confirmPassword } : {}) })
             if (r.ok) { setRevoking(undefined); toast(r.message ?? 'Done'); router.refresh() }
             return r
           }} />
@@ -314,7 +325,7 @@ export function GrantActions({ userId, revocable }: { userId: string; revocable:
 
 /* ---------------------------------------------------------------- the checker's buttons */
 
-export function DecideButtons({ kind, id, canDecide, why }: { kind: 'role' | 'grant'; id: string; canDecide: boolean; why?: string }) {
+export function DecideButtons({ kind, id, canDecide, why, needsPassword = false }: { kind: 'role' | 'grant'; id: string; canDecide: boolean; why?: string; needsPassword?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const [mode, setMode] = useState<'approve' | 'reject'>()
@@ -328,9 +339,9 @@ export function DecideButtons({ kind, id, canDecide, why }: { kind: 'role' | 'gr
       </div>
       {mode && (
         <ReasonModal title={mode === 'approve' ? 'Approve this change' : 'Reject this change'} subtitle={mode === 'approve' ? 'It takes effect now.' : 'Nothing will change. Say why.'}
-          confirm={mode === 'approve' ? 'Approve' : 'Reject'} danger={mode === 'reject'} required={mode === 'reject'} label={mode === 'approve' ? 'Note' : 'Reason'} onClose={() => setMode(undefined)}
-          run={async note => {
-            const r = await post(url, { decision: mode, note: note || undefined })
+          confirm={mode === 'approve' ? 'Approve' : 'Reject'} danger={mode === 'reject'} required={mode === 'reject'} label={mode === 'approve' ? 'Note' : 'Reason'} needsPassword={needsPassword} onClose={() => setMode(undefined)}
+          run={async (note, confirmPassword) => {
+            const r = await post(url, { decision: mode, note: note || undefined, ...(confirmPassword ? { confirmPassword } : {}) })
             if (r.ok) { setMode(undefined); toast(r.message ?? 'Done'); router.refresh() }
             return r
           }} />

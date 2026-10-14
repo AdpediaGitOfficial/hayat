@@ -10,6 +10,7 @@ export const POST = route({
   name: 'emergency.reject',
   access: { kind: 'action', action: 'emergency_checkin.approve' },
   body: rejectInput.omit({ caseId: true }),
+  reauth: { action: 'emergency.decide' },
   handler: (rc, body, _req, _r, { params }) => {
     const caseId = idParam(params)
     return caseId ? rejectEmergency(rc, { ...body, caseId }) : Promise.resolve(fail.notFound())

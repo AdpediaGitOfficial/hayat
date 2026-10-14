@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 /** Approval = pick the bed and create the reservation, atomically (D-44). */
 export const POST = route({
   name: 'requests.approve',
-  access: { kind: 'action', action: 'requests_waitlist.approve' },
+  access: { kind: 'action', action: 'approvals_inbox.view' },
   body: approveInput.omit({ requestId: true }),
   handler: (rc, body, _req, _r, { params }) => {
     const requestId = idParam(params)
