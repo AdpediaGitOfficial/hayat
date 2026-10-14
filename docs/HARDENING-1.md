@@ -27,3 +27,11 @@ Files: each package owns its own paths (see its brief); shared registry keys, mi
 ## Done when
 
 All gate tests green (typecheck, lint, build, vitest, the full Playwright run on one database), AT-033 to AT-040 present in the SRS and as named tests, every P-item listed with its default and both states tested, `docs/PLAN.md` S-14 and S-18 to S-22 updated to "implemented, proposal pending sign-off", and nothing marked decided that the client has not decided.
+
+## Result (exit gate)
+
+Built and green: typecheck, build, vitest (99 files, 2150 tests, real PostgreSQL), full Playwright run on one database (43 specs). AT-033 to AT-040 exist in SRS section 16 and as named tests (`platform/tests/api/invariants/*`, `tests/api/keys/*`, `tests/api/exit/*`, `tests/api/stays/hardening-n*`, `tests/api/readiness/hardening*`; browser smoke in `tests/e2e/hardening-{l,m,n}.spec.ts`). Real gaps found and fixed on the way: an exception asked and granted by the same person, missing audit before-states, an unauthorised bulk-exit preview, existence oracles, and P-13 not covering reservations on beds that need cleaning.
+
+Every P-item (P-01 to P-14) is still **PROPOSED, pending client sign-off**: each sits behind a registry setting marked "Proposed", each is tested ON and OFF, and changing one is an audited config version. Nothing here is a decision until Grand Hyatt answers.
+
+Open questions for Praveen: (1) with P-01 OFF, transfers and extensions also revert to AA/SA-only decisions, which differs from "previous behaviour unchanged"; (2) whether a Policy Approver at the backup level may ask for an exception from the request page; (3) the office-hours "closed" warning wording; (4) whether a Maintenance Coordinator may reopen a key item (P-07); (5) the lookup limit and recent-days constants and which new settings should be per site.

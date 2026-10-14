@@ -158,6 +158,10 @@ const FAMILIES: { name: string; match: RegExp; make: () => Promise<Family> }[] =
     const v = await RD.vacate(s, s.bedIds[0])
     return { ids: { id: v.taskId }, bodies: { assign: { housekeeperStaffId: s.hk.staffId }, cancel: { reason: 'Not needed' }, clean: { checklist: RD.FULL, notes: null }, pass: {}, fail: { note: 'Not clean enough' } } }
   } },
+  { name: 'bed without a cleaning record', match: /^readiness\/beds\/\[id\]/, make: async () => {
+    const s = await RD.scene({ beds: 2 })
+    return { ids: { id: s.bedIds[0] }, bodies: { 'open-task': { reason: 'Migrated bed, no cleaning record' } } }
+  } },
   { name: 'bed', match: /^property\/beds\/\[id\]/, make: async () => { const p = await RQ.mkProperty({ beds: 1 }); return { ids: { id: p.bedIds[0] }, bodies: { block: { reason: 'Ceiling repair' }, unblock: {}, archive: { reason: 'Removed' } } } } },
   { name: 'room', match: /^property\/rooms\/\[id\]/, make: async () => { const p = await RQ.mkProperty({ beds: 0 }); return { ids: { id: p.roomId }, bodies: { archive: { reason: 'Converted' } } } } },
   { name: 'building', match: /^property\/buildings\/\[id\]/, make: async () => { const p = await RQ.mkProperty({ beds: 0 }); return { ids: { id: p.buildingId! }, bodies: { archive: { reason: 'Demolished' } } } } },

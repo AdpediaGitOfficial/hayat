@@ -71,7 +71,7 @@ describe('AT-001 role-based access: the same record in a different shape for eac
     expect(other.status).toBe(404)
     expect({ ...other.body, requestId: 0 }).toEqual({ ...ghost.body, requestId: 0 })
     expect({ ...junk.body, requestId: 0 }).toEqual({ ...ghost.body, requestId: 0 })
-    expect(JSON.stringify(other.body)).not.toMatch(/Secret|Spa|971|403|forbidden/i)
+    expect(JSON.stringify({ ...other.body, requestId: 0 })).not.toMatch(/Secret|Spa|971|403|forbidden/i)
     expect(other.body.code).toBe('not_found')
 
     const logged = await auditRows('staff.view_denied', target.id)

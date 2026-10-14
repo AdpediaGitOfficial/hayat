@@ -127,7 +127,7 @@ test.describe.serial('hardening WP-M: proposed key and clearance rules, each on 
     await expect(list.getByText(a.codes.held)).toBeVisible()
     await expect(page.getByRole('button', { name: /Report .* as lost/ })).toHaveCount(0)
     // the API says so clearly too (nothing changes)
-    const refused = await page.request.post(`/api/v1/keys/${a.ids.held}/report-lost`, { data: { note: 'It fell in the sea' }, headers: { origin: `http://localhost:${PORT}` } })
+    const refused = await page.request.post(`/api/v1/keys/${a.ids.held}/report-lost`, { data: { note: 'It fell in the sea' } })
     expect(refused.status()).toBe(403)
     expect(await refused.json()).toMatchObject({ owner: 'Reception', next: 'Tell Reception' })
 

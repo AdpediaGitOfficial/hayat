@@ -205,7 +205,9 @@ function sitedFor(spec: Spec, item: Item): Cast {
 
 describe('AT-033 registered approval sources', () => {
   it('every approval source in the registry is covered by this test', () => {
-    const covered = new Set(['request', 'exception', 'waitlist_priority', 'transfer', 'transfer_in', 'swap', 'swap_in', 'extension', 'emergency'])
+    // transfer_exception and transfer_exception_other (P-10, proposed, pending client sign-off) are decided only by the Policy Approver of the destination
+    // site: they have no backup level, so the escalation rule does not apply; they are covered by tests/api/stays/hardening-n*.test.ts.
+    const covered = new Set(['request', 'exception', 'waitlist_priority', 'transfer', 'transfer_in', 'swap', 'swap_in', 'extension', 'emergency', 'transfer_exception', 'transfer_exception_other'])
     expect(approvalSources().map(s => s.kind).sort()).toEqual([...covered].sort())
   })
 })

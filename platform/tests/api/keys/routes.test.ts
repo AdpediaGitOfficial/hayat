@@ -47,7 +47,10 @@ describe('who sees what (scope in SQL)', () => {
     expect((await get(detail, rec, { id: inB })).status).toBe(404)
     expect((await get(detail, rec, { id: 'not-a-uuid' })).status).toBe(404)
     const sa = await actor('SA')
-    expect((await get(list, sa)).body.data.rows.map((r: { id: string }) => r.id)).toEqual(expect.arrayContaining([inA, inB]))
+    // the shared test database holds other tests' keys, so ask for each site rather than page through everything
+    const saIds = async (siteId: string) => (await get(list, sa, { path: `${P}?siteId=${siteId}` })).body.data.rows.map((r: { id: string }) => r.id)
+    expect(await saIds(a.siteId)).toContain(inA)
+    expect(await saIds(b.siteId)).toContain(inB)
     // a site filter outside the actor's sites shows nothing rather than failing
     const other = await get(list, rec, { path: `${P}?siteId=${b.siteId}` })
     expect(other.body.data.rows).toHaveLength(0)

@@ -1846,6 +1846,11 @@ sign-off register (section 17, P-01 to P-14). Where a proposal ships OFF, the sy
 | 5.6 | A person who never had a stay, reservation or request at any site can be marked Left only by a Super Admin. | PROPOSED P-08, OFF |
 | 11 (keys) | Key desk office hours (08:00 to 20:00 per site), flagged on every movement, optionally enforced; evidence for a damaged key; a resident may report their own key lost. A lost or damaged key is never marked returned (D-73, DECIDED). | PROPOSED P-03, P-04, P-05, OFF |
 | 12 (readiness) | A bed that is not ready cannot be checked into, and cannot be offered or reserved for a start date inside the lead time (1 day), and becomes Available only through a passed final inspection by someone other than the cleaner (AT-021, DECIDED). A bed with no cleaning record can be given a task by hand. | P-13, P-14 PROPOSED, ON (AT-021, SPEC-AMENDMENTS C-6) |
+| 4 (data model) | New fields and guards: `handover_event.after_hours` (P-03); a database guard on key state (damaged never back to the cabinet or a holder, lost only through the Found command, a retired item never returns, an issued item cannot change holder in one step); `eligibility_exception.transfer_request_id` (P-10); a record of declined transfer exceptions; `transfer_request` carries the destination site and the approval of each site. | New |
+| 5.6 | With P-06 off, a closed clearance case can still leave the stay held open by a waived lost key until Keys & assets retires or replaces the key; the case screen says who owns that and what to do. | PROPOSED P-06 |
+| 5.3, 5.5, 8 | With P-01 off, only the Accommodation Admin and the Super Admin decide requests, transfers and extensions (backup approvers can no longer decide transfers and extensions either). | PROPOSED P-01 |
+| 5.5 | When a transfer destination fails the gender or grade rule the transfer waits for a Policy Approver exception (reason, evidence and re-confirmed password; scoped to that transfer; never the person or the requester) instead of failing outright; the exception is asked for explicitly. | PROPOSED P-10 |
+| 12 | Reservations, offers and bulk allocation on a bed that is not ready follow the same lead-time rule (P-13); check-in is always gated. Stage 4 work-order completion must call `markBedNeedsWork`. | P-13, P-14 PROPOSED |
 | 16 | Acceptance tests AT-033 to AT-040 added. | New |
 
 
