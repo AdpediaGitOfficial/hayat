@@ -250,3 +250,60 @@ test('seed occupancy for the Accommodation Admin headline is 92% (Palm Villas + 
   const pct = (beds.filter(b => b.state === 'Occupied').length / beds.length) * 100
   assert.ok(pct >= 91.5 && pct < 93, `occupancy ${pct.toFixed(1)}%`)
 })
+
+/* ---- additional acceptance coverage (SRS §16) ---- */
+test('AT-006 gender restriction: allocation to an incompatible room is blocked and no reservation is created', () => {
+  const q = reqOf('E1030')   // male
+  const before = S().reservations.length
+  const r = A.approveRequest(aa, q.id, bed('PV-V05-R3-A').id)   // female-only room
+  assert.equal(r.ok, false)
+  assert.match((r as { reason: string }).reason, /female-only/)
+  assert.equal(S().reservations.length, before)
+})
+
+test('AT-007 grade entitlement: blocked unless the Policy Approver grants an audited exception', () => {
+  const q = reqOf('E1030')   // grade 3, Marina needs 4+
+  const marina = bed('MA-B-F1-101-A')
+  assert.equal(A.approveRequest(aa, q.id, marina.id).ok, false)
+  assert.equal(A.approveRequest(aa, q.id, marina.id, { exceptionReason: 'Senior hire' }).ok, false, 'AA cannot grant the exception')
+  assert.equal(A.approveRequest(pa, q.id, marina.id, { exceptionReason: 'Senior hire' }).ok, true)
+  assert.ok(S().audit.some(a => a.action === 'Eligibility exception'))
+})
+
+test('AT-009 waitlist creation: 15-day validity from creation', () => {
+  const q = reqOf('E1030')
+  assert.equal(A.waitlistRequest(aa, q.id).ok, true)
+  const w = S().waitlist.find(x => x.staffId === 'E1030')!
+  assert.equal(w.expiresAt - w.createdAt, 15 * DAY)
+  assert.equal(S().requests.find(x => x.id === q.id)!.status, 'Waitlisted')
+})
+
+test('AT-020 clearance after deactivation: admin completes items on the resident’s behalf with attribution; maintenance items stay with Maintenance', () => {
+  const c = S().clearances[0]
+  assert.equal(staff('E1051').loginActive, false)
+  assert.equal(A.setClearanceItem(rec, c.id, 'k', true).ok, true)
+  assert.equal(A.setClearanceItem(rec, c.id, 'i', true).ok, false, 'inspection belongs to Maintenance')
+  assert.equal(A.setClearanceItem(P('p-mc'), c.id, 'i', true).ok, true)
+  assert.ok(S().audit.some(a => a.action === 'Clearance item' && /on resident’s behalf/.test(a.detail)))
+})
+
+test('AT-028 audit log is append-only: no action edits or deletes it, and earlier entries never change', () => {
+  assert.equal(Object.keys(A).some(k => /audit/i.test(k)), false)
+  const before = JSON.stringify(S().audit)
+  A.blockBed(aa, bed('PV-V01-R3-A').id, 'test')
+  const after = S().audit
+  assert.ok(after.length > JSON.parse(before).length)
+  assert.equal(JSON.stringify(after.slice(after.length - JSON.parse(before).length)), before)
+})
+
+test('AT-030 idempotency: repeating an approval or a check-in creates no duplicates', () => {
+  const q = reqOf('E1030')
+  const b = suggestBeds(S(), staff('E1030'), { from: q.arrival, to: q.end }, aa.sites)[0]
+  assert.equal(A.approveRequest(aa, q.id, b.id).ok, true)
+  assert.equal(A.approveRequest(aa, q.id, b.id).ok, false)
+  assert.equal(S().reservations.filter(r => r.staffId === 'E1030' && r.status === 'Reserved').length, 1)
+  const res = S().reservations.find(r => r.staffId === 'E1012')!
+  assert.equal(A.checkIn(rec, res.id, { idVerified: true, keyIssued: true }).ok, true)
+  assert.equal(A.checkIn(rec, res.id, { idVerified: true, keyIssued: true }).ok, false)
+  assert.equal(S().stays.filter(s => s.staffId === 'E1012' && s.status === 'Active').length, 1)
+})

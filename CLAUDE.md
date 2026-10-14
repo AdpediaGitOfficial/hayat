@@ -10,7 +10,8 @@ A role-based web platform that manages staff housing from staff record → eligi
 2. `docs/PERMISSIONS.md`: corrected role × module matrix and capabilities.
 3. `docs/APPROVALS.md`: approval routes, escalation and timing.
 4. `docs/source/srs-v1.0.md`: full SRS (data model §4, state transitions §6, acceptance tests AT-001 to AT-032 §16, invariants Appendix B).
-5. `docs/source/approval-tree-v1.1.md`, `user-journey-and-module-map.md`, `journey-review-notes.md`, `user-groups-draft.md`: earlier inputs, kept for history.
+5. `docs/GAP-ANALYSIS.md` and `docs/PLAN.md`: review of the Full Project Document v1.1 and the external HTML prototype; the production build plan (decisions T-1 to T-10, stages, acceptance-test mapping, prototype hardening list).
+6. `docs/source/approval-tree-v1.1.md`, `user-journey-and-module-map.md`, `journey-review-notes.md`, `user-groups-draft.md`, `Grand_Hyatt_Full_Project_Document_v1.1.docx`, `external-html-prototype.html`: earlier inputs, kept for history. The Full Project Document §20/§21 predate D-25 (Policy Approver); see `GAP-ANALYSIS.md` section 2 for the conflicts.
 
 If a request conflicts with DECISIONS.md, point out the conflict before building. Never hardcode an OPEN item; make it configurable or a clearly marked placeholder.
 

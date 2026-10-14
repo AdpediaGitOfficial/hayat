@@ -6,7 +6,7 @@ Next.js 14 (App Router) + React 18 + TypeScript. **Dummy data, in-memory state, 
 cd prototype
 npm install
 npm run dev        # http://localhost:3000, pick a role on the landing page
-npm test           # 25 scenario tests against the real store
+npm test           # 32 scenario tests against the real store
 npm run build
 ```
 
