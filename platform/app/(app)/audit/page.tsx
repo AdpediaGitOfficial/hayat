@@ -1,10 +1,10 @@
-import Link from 'next/link'
 import { requirePage } from '@/server/auth/page'
 import { searchAudit } from '@/server/queries/access/audit'
 import { auditQuery, toAuditFilter } from '@/server/queries/access/params'
 import { ROLE_LABEL } from '@/domain/labels'
 import type { Role } from '@/domain/enums'
 import { Alert, Badge, GlassCard, PageHeader } from '@/ui'
+import { LinkButton } from '../users/link-button'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Audit log · Grand Hyatt Staff Accommodation' }
@@ -41,7 +41,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Record
           <input className="input" type="date" name="from" defaultValue={flat.from?.slice(0, 10) ?? ''} aria-label="From date" style={{ maxWidth: 160 }} />
           <input className="input" type="date" name="to" defaultValue={flat.to?.slice(0, 10) ?? ''} aria-label="To date" style={{ maxWidth: 160 }} />
           <button className="btn secondary" type="submit">Filter</button>
-          {Object.keys(keep).length > 0 && <Link className="btn ghost" href="/audit">Clear</Link>}
+          {Object.keys(keep).length > 0 && <LinkButton variant="ghost" href="/audit">Clear</LinkButton>}
         </form>
         <div className="tbl-wrap">
           <table className="tbl stack-m">
@@ -68,7 +68,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Record
             </tbody>
           </table>
         </div>
-        <div className="card-foot"><span>{page.rows.length} {page.rows.length === 1 ? 'event' : 'events'} shown</span>{older && <Link className="btn ghost sm" href={older}>Older events</Link>}</div>
+        <div className="card-foot"><span>{page.rows.length} {page.rows.length === 1 ? 'event' : 'events'} shown</span>{older && <LinkButton variant="ghost" size="sm" href={older}>Older events</LinkButton>}</div>
       </GlassCard>
     </>
   )

@@ -1,7 +1,8 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Alert, Button, Field, Input, Modal, Select, Textarea, useToast } from '@/ui'
+import { Alert, Button, Field, Input, Select, Textarea, useToast } from '@/ui'
+import { Modal } from '../users/portal-modal'
 import { api, type ApiFail } from '@/ui/api'
 
 export interface EditableRow {

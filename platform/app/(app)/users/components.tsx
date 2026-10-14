@@ -2,7 +2,8 @@
 /** Interactive pieces of the Users & access screens. Every failure shows reason + owner + next action (D-93). */
 import { useRouter } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
-import { Alert, Button, Field, Input, Modal, Select, Textarea, useToast } from '@/ui'
+import { Alert, Button, Field, Input, Select, Textarea, useToast } from '@/ui'
+import { Modal } from './portal-modal'
 import { post, type ApiFail, type ApiResult } from '@/ui/api'
 import { ROLES, CAPABILITIES, type Capability, type Role, type ScopeKind } from '@/domain/enums'
 import { CAP_LABEL, ROLE_LABEL } from '@/domain/labels'

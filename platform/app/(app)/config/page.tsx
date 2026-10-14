@@ -1,10 +1,10 @@
-import Link from 'next/link'
 import { requirePage } from '@/server/auth/page'
 import { decide } from '@/server/policy'
 import { listConfig, type ConfigRow } from '@/server/queries/access/config'
 import { selectableSites } from '@/server/queries/access/sites'
 import { Alert, Badge, GlassCard, PageHeader } from '@/ui'
 import { EditConfigButton } from './components'
+import { LinkButton } from '../users/link-button'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Configuration · Grand Hyatt Staff Accommodation' }
@@ -39,7 +39,7 @@ function Rows({ rows, canManage, sites }: { rows: ConfigRow[]; canManage: boolea
               <td data-h="Decision">{statusBadge(r)}{r.perSite && <div className="subtle body-sm">Can differ per site</div>}</td>
               <td data-h="" style={{ textAlign: 'right' }}>
                 <span className="row" style={{ justifyContent: 'flex-end' }}>
-                  <Link className="btn ghost sm" href={`/config/${encodeURIComponent(r.key)}`}>History</Link>
+                  <LinkButton variant="ghost" size="sm" href={`/config/${encodeURIComponent(r.key)}`}>History</LinkButton>
                   {canManage && <EditConfigButton sites={r.perSite ? sites : []} row={{ key: r.key, label: r.label, description: r.description, default: r.default, value: r.value, options: r.options, perSite: r.perSite, overrides: r.overrides.map(o => ({ siteId: o.siteId, value: o.value })) }} />}
                 </span>
               </td>
@@ -68,7 +68,7 @@ export default async function ConfigPage() {
         </GlassCard>
       )}
       {Object.entries(GROUPS).map(([g, meta]) => {
-        const list = rows.filter(r => r.group === g)
+        const list = rows.filter(r => r.group === g && r.status !== 'open') // open ones are shown above, once
         return list.length ? (
           <GlassCard key={g} strong flush title={meta.title} subtitle={meta.subtitle}><Rows rows={list} canManage={canManage} sites={sites} /></GlassCard>
         ) : null

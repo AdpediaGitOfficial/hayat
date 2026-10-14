@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { requirePage } from '@/server/auth/page'
 import { decide } from '@/server/policy'
 import { listUsers, type UserListRow } from '@/server/queries/access/users'
@@ -10,6 +9,7 @@ import { CAP_LABEL, ROLE_LABEL } from '@/domain/labels'
 import { Alert, Badge, Blocked, GlassCard, PageHeader } from '@/ui'
 import { NewAccountButton } from './components'
 import { accountBadge, fmtUtc } from './badges'
+import { LinkButton, RowLink } from './link-button'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Users & access · Grand Hyatt Staff Accommodation' }
@@ -42,7 +42,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Record
       <PageHeader crumbs={['People']} title="Users and access"
         summary="Accounts are created by an administrator and handed over with a temporary password. Roles and capabilities need a second Super Admin; capabilities add actions, never sites."
         actions={<>
-          {maySeeApprovals && <Link className="btn secondary" href="/users/approvals">Approvals{waiting > 0 ? ` (${waiting})` : ''}</Link>}
+          {maySeeApprovals && <LinkButton href="/users/approvals">Approvals{waiting > 0 ? ` (${waiting})` : ''}</LinkButton>}
           {mayCreate && <NewAccountButton sites={sites} buildings={buildings} canRequestRole={decide(actor, 'users_roles.manage_roles_and_scope').allowed} siteRequired={actor.sites !== 'all'} />}
         </>} />
 
@@ -66,7 +66,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Record
             <tbody>
               {rows.map(u => (
                 <tr key={u.id}>
-                  <td data-h="Person"><Link href={`/users/${u.id}`}><b>{u.fullName ?? u.username}</b></Link><div className="subtle body-sm">{u.username}{u.employeeId && u.employeeId !== u.username ? ` · ${u.employeeId}` : ''}{u.self ? ' · you' : ''}</div></td>
+                  <td data-h="Person"><RowLink href={`/users/${u.id}`}><b>{u.fullName ?? u.username}</b></RowLink><div className="subtle body-sm">{u.username}{u.employeeId && u.employeeId !== u.username ? ` · ${u.employeeId}` : ''}{u.self ? ' · you' : ''}</div></td>
                   <td data-h="Roles"><span className="chips">
                     {u.roles.length === 0 && <span className="subtle">No role</span>}
                     {[...new Set(u.roles.map(r => r.role))].map(r => <Badge key={r} outline>{ROLE_LABEL[r]}</Badge>)}
@@ -83,8 +83,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Record
         </div>
         <div className="card-foot"><span>{rows.length} {rows.length === 1 ? 'account' : 'accounts'} on this page</span>
           <span className="row">
-            {page > 1 && <Link className="btn ghost sm" href={`/users?${qs(page - 1)}`}>Previous</Link>}
-            {hasMore && <Link className="btn ghost sm" href={`/users?${qs(page + 1)}`}>Next</Link>}
+            {page > 1 && <LinkButton variant="ghost" size="sm" href={`/users?${qs(page - 1)}`}>Previous</LinkButton>}
+            {hasMore && <LinkButton variant="ghost" size="sm" href={`/users?${qs(page + 1)}`}>Next</LinkButton>}
           </span>
         </div>
       </GlassCard>

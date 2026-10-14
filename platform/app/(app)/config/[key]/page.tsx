@@ -1,10 +1,10 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
 import { getConfigHistory } from '@/server/queries/access/config'
 import { selectableSites } from '@/server/queries/access/sites'
 import { configHistoryQuery } from '@/server/queries/access/params'
 import { Alert, Badge, GlassCard, PageHeader } from '@/ui'
+import { LinkButton } from '../../users/link-button'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Setting history · Grand Hyatt Staff Accommodation' }
@@ -21,14 +21,14 @@ export default async function ConfigHistoryPage({ params, searchParams }: { para
   return (
     <>
       <PageHeader crumbs={['System', 'Configuration']} title={h.row.label} summary={<span className="mono">{h.row.key}</span>}
-        actions={<Link className="btn secondary" href="/config">All settings</Link>} />
+        actions={<LinkButton href="/config">All settings</LinkButton>} />
       <Alert tone={h.row.status === 'open' ? 'warning' : 'info'} title={`${h.row.status === 'open' ? 'Open decision' : h.row.status === 'default' ? 'Recommended default' : 'Decided'} · ${h.row.ref}`}
         detail={`${h.row.description || 'No further description.'} Default value: ${show(h.row.default)}.`} />
       {h.row.perSite && (
         <GlassCard title="Scope" subtitle="This setting can differ by site">
           <div className="row wrap">
-            <Link className={`btn ${!q.success || !q.data.siteId ? 'primary' : 'secondary'} sm`} href={`/config/${encodeURIComponent(key)}`}>All sites</Link>
-            {sites.map(s => <Link key={s.id} className={`btn ${q.success && q.data.siteId === s.id ? 'primary' : 'secondary'} sm`} href={`/config/${encodeURIComponent(key)}?siteId=${s.id}`}>{s.code}</Link>)}
+            <LinkButton variant={!q.success || !q.data.siteId ? 'primary' : 'secondary'} size="sm" href={`/config/${encodeURIComponent(key)}`}>All sites</LinkButton>
+            {sites.map(s => <LinkButton key={s.id} variant={q.success && q.data.siteId === s.id ? 'primary' : 'secondary'} size="sm" href={`/config/${encodeURIComponent(key)}?siteId=${s.id}`}>{s.code}</LinkButton>)}
           </div>
         </GlassCard>
       )}
