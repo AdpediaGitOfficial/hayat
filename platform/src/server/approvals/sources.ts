@@ -18,4 +18,7 @@ import '@/server/commands/stays/approvalSources'
 import '@/server/queries/emergency/approvalSource'
 // <<< WP-G approval sources
 
+// >>> WP-H approval sources (clearance waiver)
+// <<< WP-H approval sources
+
 export {}

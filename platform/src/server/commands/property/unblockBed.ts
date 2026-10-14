@@ -8,6 +8,7 @@ import { runCommand } from '@/server/command/run'
 import type { RequestContext } from '@/server/command/context'
 import { fail, failure, ok, type Result } from '@/server/command/result'
 import { idSchema, loadBed, optionalText, snap } from './shared'
+import { openCleaningTask } from '@/server/readiness/hooks'
 
 export const input = z.object({ bedId: idSchema, note: optionalText(500) })
 export type UnblockBedInput = z.infer<typeof input>
@@ -27,6 +28,7 @@ export function unblockBed(rc: RequestContext, i: UnblockBedInput): Promise<Resu
       return failure('conflict', `Bed ${b.code} is not blocked (it is ${b.state.replace(/_/g, ' ')})`, { owner: 'Accommodation Admin', next: 'Nothing to unblock' })
     }
     await c.tx.update(bed).set({ state: 'needs_cleaning', stateReason: null, stateSince: c.now }).where(eq(bed.id, b.id))
+    await openCleaningTask(c.tx, { bedId: b.id, reason: 'Unblocked', now: c.now })
     await c.tx.update(bedBlock).set({ releasedAt: c.now, releasedBy: c.user.id }).where(and(eq(bedBlock.bedId, b.id), isNull(bedBlock.releasedAt)))
     await audit(c, {
       action: 'property.bed.unblocked', entityType: 'bed', entityId: b.id, siteId: b.siteId, reason: i.note ?? undefined,

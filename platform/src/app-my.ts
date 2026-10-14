@@ -12,6 +12,10 @@ import { renderMyRequests } from '../app/(app)/requests/_components/MySection'
 // >>> WP-E my imports
 import { waitlistSection } from '../app/(app)/waitlist/_components/MySection'
 // <<< WP-E my imports
+// >>> WP-H my imports
+// <<< WP-H my imports
+// >>> WP-I my imports
+// <<< WP-I my imports
 // >>> WP-F my imports
 import { renderMyStay } from '../app/(app)/stays/_components/MyStay'
 // <<< WP-F my imports
@@ -22,6 +26,8 @@ export interface MySection {
 }
 
 export const MY_SECTIONS: readonly MySection[] = [
+  // >>> WP-I my sections (keys I hold)
+  // <<< WP-I my sections
   // >>> WP-F my sections (current stay, checkout)
   { id: 'stay', render: renderMyStay },
   // <<< WP-F my sections

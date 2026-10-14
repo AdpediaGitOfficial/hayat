@@ -12,6 +12,10 @@ import { TABLES_REQUESTS } from './schema.requests'
 import { TABLES_WAITLIST, waitlistEntry, bedOffer } from './schema.waitlist'
 import { TABLES_STAYS } from './schema.stays'
 import { TABLES_EMERGENCY } from './schema.emergency'
+import { TABLES_STAGE3 } from './schema.stage3'
+import { TABLES_EXIT } from './schema.exit'
+import { TABLES_KEYS } from './schema.keys'
+import { TABLES_READINESS } from './schema.readiness'
 import type {
   BedStateDb, Capability, ClaimKind, GrantStatus, OfferStatus, RequestStatus, ReservationStatus, Role, ScopeKind,
   StayStatus, StayTypeDb, WaitlistStatus,
@@ -285,4 +289,5 @@ export const TABLES = {
   login_attempt: loginAttempt,
   ...TABLES_PROPERTY, ...TABLES_STAFF, ...TABLES_ACCESS,
   ...TABLES_ALLOC, ...TABLES_REQUESTS, ...TABLES_WAITLIST, ...TABLES_STAYS, ...TABLES_EMERGENCY,
+  ...TABLES_STAGE3, ...TABLES_EXIT, ...TABLES_KEYS, ...TABLES_READINESS,
 } as const

@@ -15,6 +15,15 @@ import './waitlist'
 import './stays'
 // <<< WP-F sweeps
 
+// >>> WP-H sweeps (clearance overdue)
+// <<< WP-H sweeps
+
+// >>> WP-I sweeps (keys overdue)
+// <<< WP-I sweeps
+
+// >>> WP-J sweeps (cleaning reminders)
+// <<< WP-J sweeps
+
 // >>> WP-G sweeps (emergency)
 import './emergency'
 // <<< WP-G sweeps

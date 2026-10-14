@@ -11,7 +11,7 @@ import type { Db } from '@/server/db/client'
 export type DecisionStatus = 'decided' | 'default' | 'open'
 
 export interface ConfigDef<T = unknown> {
-  group: 'auth' | 'calendar' | 'timers' | 'import' | 'eligibility' | 'stays'
+  group: 'auth' | 'calendar' | 'timers' | 'import' | 'eligibility' | 'stays' | 'exit' | 'keys' | 'readiness' | 'attachments'
   label: string
   description: string
   schema: ZodType<T>
@@ -65,6 +65,43 @@ export const CONFIG = {
   'stays.open_ended_review_months': def({ group: 'stays', label: 'Review interval for open-ended stays (months)', description: '', schema: int(1, 60), default: 6, ref: 'D-54', status: 'default' }),
   'timers.emergency_relocation_hours': def({ group: 'timers', label: 'Emergency rejection: relocation task deadline (hours)', description: 'GH-07 owns the real figure.', schema: int(1, 720), default: 48, ref: 'GH-07', status: 'open' }),
   'timers.no_show_extensions': def({ group: 'timers', label: 'No-show extensions allowed per reservation', description: 'AA may extend once, with a reason.', schema: int(0, 5), default: 1, ref: 'D-58', status: 'default' }),
+
+  /* ---- Stage 3: exit, clearance, keys, readiness, attachments ---- */
+  'exit.login_revocation': def({ group: 'exit', label: 'When login is revoked after Mark as Left', description: 'Only "immediate" is built (D-35). D-37 (a notice period that keeps login until the effective date) is open.', schema: z.enum(['immediate']), default: 'immediate', ref: 'D-37', status: 'open' }),
+  'clearance.checklist': def({
+    group: 'exit', label: 'Clearance checklist', description: 'Items added to every clearance case. One more item is added for every key or asset the person still holds.',
+    schema: z.array(z.object({ id: z.string().regex(/^[a-z0-9_]{1,40}$/), label: z.string().trim().min(1).max(120), mandatory: z.boolean(), owner: z.enum(['Reception', 'Maintenance', 'AA']) })).max(30),
+    default: [
+      { id: 'belongings', label: 'Belongings removed from the room', mandatory: true, owner: 'Reception' as const },
+      { id: 'inspection', label: 'Room inspection and damage or loss record', mandatory: true, owner: 'Maintenance' as const },
+      { id: 'loss_record', label: 'Incident and loss record reviewed', mandatory: false, owner: 'AA' as const },
+    ], ref: 'SRS 5.6', status: 'default',
+  }),
+  'clearance.due_business_days': def({ group: 'exit', label: 'Clearance due (business days after Mark as Left)', description: 'Overdue cases are flagged to the Accommodation Admin and escalated to the Policy Approver. Never closed automatically.', schema: int(1, 60), default: 5, ref: 'GH-18', status: 'open' }),
+  'clearance.escalate_after_business_days': def({ group: 'exit', label: 'Clearance overdue: escalate after (business days)', description: '', schema: int(0, 30), default: 2, ref: 'GH-18', status: 'open' }),
+  'keys.item_types': def({
+    group: 'keys', label: 'Key and asset types', description: 'D-72 (key model for shared rooms) is open: a room key and a bed locker key are both supported as items linked to a room or a bed.',
+    schema: z.array(z.object({ id: z.string().regex(/^[a-z0-9_]{1,40}$/), label: z.string().trim().min(1).max(80), category: z.enum(['key', 'asset']) })).min(1).max(30),
+    default: [
+      { id: 'room_key', label: 'Room key', category: 'key' as const },
+      { id: 'locker_key', label: 'Bed locker key', category: 'key' as const },
+      { id: 'access_card', label: 'Access card', category: 'asset' as const },
+    ], ref: 'D-72', status: 'open',
+  }),
+  'keys.overdue_grace_days': def({ group: 'keys', label: 'Keys held after departure: days before they count as overdue', description: 'Overdue is computed, never forgotten.', schema: int(0, 30), default: 1, ref: 'D-73', status: 'default' }),
+  'readiness.cleaning_checklist': def({
+    group: 'readiness', label: 'Cleaning checklist', description: 'Each line is answered by the housekeeper; required lines must be ticked.',
+    schema: z.array(z.object({ id: z.string().regex(/^[a-z0-9_]{1,40}$/), label: z.string().trim().min(1).max(120), required: z.boolean() })).min(1).max(30),
+    default: [
+      { id: 'linen', label: 'Bed linen changed', required: true },
+      { id: 'surfaces', label: 'Floor and surfaces cleaned', required: true },
+      { id: 'bathroom', label: 'Bathroom cleaned', required: true },
+      { id: 'bins', label: 'Bins emptied', required: true },
+      { id: 'damage', label: 'Damage or missing items noticed and noted', required: false },
+    ], ref: 'D-23', status: 'default',
+  }),
+  'readiness.cleaning_sla_hours': def({ group: 'readiness', label: 'Cleaning not assigned or not done: remind Reception after (hours)', description: '', schema: int(1, 240), default: 24, ref: 'GH-18', status: 'open' }),
+  'attachments.max_mb': def({ group: 'attachments', label: 'Largest attachment (MB)', description: 'PNG, JPEG and PDF only.', schema: int(1, 20), default: 5, ref: 'GH-11', status: 'default' }),
 
   /* ---- staff import ---- */
   'import.partial_policy': def({ group: 'import', label: 'CSV import with some invalid rows', description: 'save_valid: confirm saves the valid rows and offers the rejected ones as a file. all_or_nothing: any invalid row blocks the import.', schema: z.enum(['save_valid', 'all_or_nothing']), default: 'save_valid', ref: 'AT-005', status: 'default' }),

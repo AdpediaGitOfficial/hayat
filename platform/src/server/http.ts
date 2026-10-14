@@ -61,7 +61,20 @@ export function sameOrigin(req: Request): boolean {
   return origin !== 'null'
 }
 
+/** A handler may return one of these to send raw bytes (an attachment, a CSV) instead of JSON. Always as a download, never inline. */
+export class FileResponse {
+  constructor(readonly bytes: Buffer | string, readonly filename: string, readonly contentType: string) {}
+}
+
 function respond(r: Result<unknown>, requestId: string, cookies: string[]): Response {
+  if (r.ok && r.data instanceof FileResponse) {
+    const headers = new Headers({
+      'content-type': r.data.contentType, 'cache-control': 'private, no-store', 'x-request-id': requestId, 'x-content-type-options': 'nosniff',
+      'content-disposition': `attachment; filename="${r.data.filename.replace(/[^\w. ()-]/g, '_')}"`,
+    })
+    for (const c of cookies) headers.append('set-cookie', c)
+    return new Response(typeof r.data.bytes === 'string' ? r.data.bytes : new Uint8Array(r.data.bytes), { status: 200, headers })
+  }
   const headers = new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store', 'x-request-id': requestId })
   for (const c of cookies) headers.append('set-cookie', c)
   if (r.ok) return new Response(JSON.stringify({ ok: true, data: r.data ?? null, message: r.message, requestId }), { status: 200, headers })

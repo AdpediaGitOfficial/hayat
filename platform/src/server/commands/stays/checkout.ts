@@ -20,6 +20,8 @@ import { releaseClaim } from '@/server/allocation'
 import { notify } from '@/server/notify'
 import { guardUnique } from '@/server/commands/property/shared'
 import { dateSchema, idSchema, KEYS_PLACEHOLDER, loadStayLocked, lockBeds, noteSchema, siteToday, staffName } from './shared'
+import { openCleaningTask } from '@/server/readiness/hooks'
+import { closeStayIfDone } from '@/server/stays-close'
 
 /* ---------------- the resident's request ---------------- */
 
@@ -103,6 +105,8 @@ export function processCheckout(rc: RequestContext, i: ProcessCheckoutInput): Pr
     await c.tx.update(stay).set({ status: 'checked_out', checkedOutAt: c.now }).where(eq(stay.id, s.id))
     const bedWas = b?.state
     if (b && b.state === 'occupied') await c.tx.update(bed).set({ state: 'needs_cleaning', stateReason: 'Resident checked out', stateSince: c.now }).where(eq(bed.id, b.id))
+    if (bedWas === 'occupied') await openCleaningTask(c.tx, { bedId: s.bedId, reason: 'Resident checked out', now: c.now })
+    await closeStayIfDone(c.tx, s.id, c.now) // closes only if nothing is outstanding (keys, clearance): checkout is not clearance
     if (req) await c.tx.update(checkoutRequest).set({ status: 'completed', completedBy: c.user.id, completedAt: c.now, acknowledgedAt: req.acknowledgedAt ?? c.now, acknowledgedBy: req.acknowledgedBy ?? c.user.id }).where(eq(checkoutRequest.id, req.id))
 
     await audit(c, {

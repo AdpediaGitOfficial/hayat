@@ -10,8 +10,9 @@
  * either committed first (and is seen here) or waits for the archive and is then refused by the database guard.
  * The same function powers the read-only preview the screens show before anybody clicks "Archive".
  */
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { bed, bedClaim, room } from '@/server/db/schema'
+import { cleaningTask, handoverItem } from '@/server/db/schema.stage3'
 import type { Db } from '@/server/db/client'
 import type { Tx } from '@/server/command/context'
 import type { BedRow, RoomRow } from './shared'
@@ -24,6 +25,8 @@ export type BlockerKind =
   | 'live_claim'        // a reservation, offer hold or stay is on the books
   | 'bed_not_ready'     // cleaning / inspection / maintenance state still running
   | 'active_child'      // rooms or beds below it are still active (archive them first, or archive together)
+  | 'outstanding_item'  // a key or asset of this bed or room is still held, lost or damaged (Stage 3, D-19)
+  | 'open_cleaning'     // a cleaning task or its final inspection is still open (Stage 3)
 
 export interface Blocker {
   kind: BlockerKind
@@ -174,6 +177,38 @@ const activeChildren: CheckFn = async (_q, s) => {
   return []
 }
 
+
+/** Keys and assets of these beds or rooms that are still held, or lost or damaged and unresolved (D-19, D-73). */
+const outstandingItems: CheckFn = async (q, s) => {
+  const bedIds = s.beds.map(b => b.id), roomIds = s.rooms.map(r => r.id)
+  if (bedIds.length === 0 && roomIds.length === 0) return []
+  const rows = await q.select({ id: handoverItem.id, code: handoverItem.code, type: handoverItem.itemType, status: handoverItem.status, bedId: handoverItem.bedId, roomId: handoverItem.roomId })
+    .from(handoverItem).where(and(
+      inArray(handoverItem.status, ['issued', 'lost', 'damaged']), isNull(handoverItem.archivedAt),
+      or(bedIds.length ? inArray(handoverItem.bedId, bedIds) : undefined, roomIds.length ? inArray(handoverItem.roomId, roomIds) : undefined),
+    ))
+  return rows.map(r => ({
+    kind: 'outstanding_item' as const, entityType: r.bedId ? 'bed' as const : 'room' as const, entityId: (r.bedId ?? r.roomId)!,
+    label: `${r.type.replace(/_/g, ' ')} ${r.code}`,
+    why: r.status === 'issued' ? 'This key or asset is still with a resident.' : `This key or asset is ${r.status} and not yet resolved.`,
+    owner: 'Reception', next: 'Record its return, or retire and replace it, then try again.',
+  }))
+}
+
+/** A cleaning task (or the inspection after it) still open on one of these beds. */
+const openCleaning: CheckFn = async (q, s) => {
+  if (s.beds.length === 0) return []
+  const rooms = new Map(s.rooms.map(r => [r.id, r]))
+  const byId = new Map(s.beds.map(b => [b.id, b]))
+  const rows = await q.select({ bedId: cleaningTask.bedId, status: cleaningTask.status }).from(cleaningTask)
+    .where(and(inArray(cleaningTask.bedId, s.beds.map(b => b.id)), inArray(cleaningTask.status, ['open', 'cleaned'])))
+  return rows.map(r => ({
+    kind: 'open_cleaning' as const, entityType: 'bed' as const, entityId: r.bedId, label: bedLabel(byId.get(r.bedId)!, rooms),
+    why: r.status === 'open' ? 'Cleaning is not finished.' : 'Cleaning is done and the final inspection is pending.',
+    owner: r.status === 'open' ? 'Housekeeping' : 'Final Inspection holder', next: 'Finish the cleaning and inspection, then try again.',
+  }))
+}
+
 /**
  * Append a checker here to add a dependency (outstanding key, open work order, ...). Order is the order they are listed
  * in the answer: what makes the structure unusable first, bookkeeping last.
@@ -182,6 +217,8 @@ export const DEPENDENCY_CHECKERS: DependencyChecker[] = [
   { id: 'occupied_beds', people: true, check: occupiedBeds },
   { id: 'live_claims', people: true, check: liveClaims },
   { id: 'beds_not_ready', people: false, check: notReadyBeds },
+  { id: 'outstanding_items', people: true, check: outstandingItems },
+  { id: 'open_cleaning', people: false, check: openCleaning },
   { id: 'active_children', people: false, check: activeChildren },
 ]
 

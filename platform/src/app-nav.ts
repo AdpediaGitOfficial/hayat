@@ -47,6 +47,15 @@ export const NAV: readonly NavItem[] = [
   { id: 'emergency', label: 'Emergency check-in', href: '/emergency', icon: 'siren', group: 'Accommodation', actions: ['emergency_checkin.initiate', 'emergency_checkin.approve', 'emergency_checkin.view'] },
   // <<< WP-G nav
 
+  // >>> WP-H nav (exit and clearance)
+  // <<< WP-H nav
+
+  // >>> WP-I nav (keys and assets)
+  // <<< WP-I nav
+
+  // >>> WP-J nav (housekeeping and readiness)
+  // <<< WP-J nav
+
   // >>> WP-A nav (property and inventory)
   // Sites & rooms: anyone who may view sites and buildings (SA, AA, Rec, MC, Sec, Mgr, Aud). Residents, technicians and contractors never see it.
   { id: 'sites', label: 'Sites & rooms', href: '/sites', icon: 'building', group: 'Accommodation', actions: ['sites_buildings.view'] },

@@ -6,7 +6,7 @@ A role-based web platform that manages staff housing from staff record → eligi
 
 ## Read before any work
 
-1. `docs/DECISIONS.md`: **source of truth**. 103 numbered decisions (D-01 to D-103) with status DECIDED / DEFAULT / OPEN. Overrides everything in `docs/source/`.
+1. `docs/DECISIONS.md`: **source of truth**. 109 numbered decisions (D-01 to D-109) with status DECIDED / DEFAULT / OPEN. Overrides everything in `docs/source/`.
 2. `docs/PERMISSIONS.md`: corrected role × module matrix and capabilities.
 3. `docs/APPROVALS.md`: approval routes, escalation and timing.
 4. `docs/source/srs-v1.0.md`: full SRS (data model §4, state transitions §6, acceptance tests AT-001 to AT-032 §16, invariants Appendix B).

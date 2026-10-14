@@ -27,6 +27,7 @@ import { recordExceptionUse } from '@/server/eligibility'
 import { notify } from '@/server/notify'
 import { authorizeAny, bedLabel, idSchema, KEYS_PLACEHOLDER, loadStaysLocked, lockBeds, notInvolved, siteToday, staffName, type StayFull } from './shared'
 import { executionFailed, guarded, isExecutionFailure, loadTransfer, type TransferRow } from './transferShared'
+import { openCleaningTask } from '@/server/readiness/hooks'
 
 export const input = z.object({ id: idSchema })
 export type ExecuteTransferInput = z.infer<typeof input>
@@ -112,7 +113,10 @@ async function runTransfer(c: CommandContext, t: TransferRow): Promise<Result<Ex
   await releaseClaim(c.tx, s.claimId, 'transferred', c.now)
   await c.tx.update(stay).set({ bedId: destId, claimId: a.data.claimId }).where(eq(stay.id, s.id))
   await c.tx.update(bed).set({ state: 'occupied', stateReason: null, stateSince: c.now }).where(eq(bed.id, destId))
-  if (source.state === 'occupied') await c.tx.update(bed).set({ state: 'needs_cleaning', stateReason: 'Resident transferred out', stateSince: c.now }).where(eq(bed.id, source.id))
+  if (source.state === 'occupied') {
+    await c.tx.update(bed).set({ state: 'needs_cleaning', stateReason: 'Resident transferred out', stateSince: c.now }).where(eq(bed.id, source.id))
+    await openCleaningTask(c.tx, { bedId: source.id, reason: 'Resident transferred out', now: c.now })
+  }
   await recordExceptionUse(c.tx, a.data.exceptionIds, { for: 'transfer', ref: t.id, by: c.user.id })
   await c.tx.update(transferRequest).set({ status: 'executed', executedBy: c.user.id, executedAt: c.now, newClaimId: a.data.claimId }).where(eq(transferRequest.id, t.id))
 
