@@ -23,6 +23,11 @@ async function signIn(page: Page, username: string) {
 
 /** The e2e database has a random name; find the one that holds the site this run created. */
 async function withE2eDb<T>(siteCode: string, fn: (db: Client) => Promise<T>): Promise<T> {
+  if (process.env.E2E_DATABASE_URL) { // set by global setup: this run's own database (other runs may share the server)
+    const own = new Client({ connectionString: process.env.E2E_DATABASE_URL })
+    await own.connect()
+    try { return await fn(own) } finally { await own.end() }
+  }
   const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://postgres@localhost:5432/postgres'
   const admin = new Client({ connectionString: adminUrl })
   await admin.connect()

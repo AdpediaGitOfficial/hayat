@@ -14,6 +14,13 @@ export const metadata = { title: 'Approvals · Grand Hyatt Staff Accommodation' 
 const KIND: Record<string, { label: string; cta: string }> = {
   request: { label: 'Bed request', cta: 'Review and allocate' },
   exception: { label: 'Exception', cta: 'Review exception' },
+  waitlist_priority: { label: 'Waitlist priority', cta: 'Review priority' },
+  transfer: { label: 'Transfer (from this site)', cta: 'Review transfer' },
+  transfer_in: { label: 'Transfer (into this site)', cta: 'Review transfer' },
+  swap: { label: 'Bed swap (from this site)', cta: 'Review swap' },
+  swap_in: { label: 'Bed swap (into this site)', cta: 'Review swap' },
+  extension: { label: 'Stay extension', cta: 'Review extension' },
+  emergency: { label: 'Emergency check-in', cta: 'Review case' },
 }
 
 export default async function Approvals({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
