@@ -53,6 +53,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-H nav
 
   // >>> WP-I nav (keys and assets)
+  // Reception, Night Keys holders (Security), administrators and the Auditor see the cabinet of their sites; a Resident sees only the items they hold (also under My accommodation).
+  { id: 'keys', label: 'Keys & assets', href: '/keys', icon: 'key', group: 'Accommodation', actions: ['keys.manage', 'keys.issue_return', 'keys.issue_return_night', 'keys.view'] },
   // <<< WP-I nav
 
   // >>> WP-J nav (housekeeping and readiness)

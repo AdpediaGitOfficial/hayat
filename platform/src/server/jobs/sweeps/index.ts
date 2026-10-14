@@ -20,6 +20,7 @@ import './exit'
 // <<< WP-H sweeps
 
 // >>> WP-I sweeps (keys overdue)
+import './keys'
 // <<< WP-I sweeps
 
 // >>> WP-J sweeps (cleaning reminders)

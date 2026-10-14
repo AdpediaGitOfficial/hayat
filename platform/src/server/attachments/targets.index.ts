@@ -5,6 +5,7 @@ import '@/server/commands/exit/attachments'
 // <<< WP-H attachment targets
 
 // >>> WP-I attachment targets (key damage and loss)
+import '@/server/commands/keys/attachments'
 // <<< WP-I attachment targets
 
 // >>> WP-J attachment targets (cleaning and inspection)
