@@ -3,14 +3,15 @@ import { z } from 'zod'
 import { transferRequest } from '@/server/db/schema.stays'
 import { audit } from '@/server/audit'
 import { runCommand } from '@/server/command/run'
-import type { RequestContext } from '@/server/command/context'
+import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, ok, type Result } from '@/server/command/result'
 import { decide } from '@/server/policy'
 import { notify } from '@/server/notify'
-import { authorizeAny, idSchema, loadStaysLocked, noteSchema, notInvolved, reasonSchema } from './shared'
+import { authorizeAny, bedLabel, idSchema, loadStaysLocked, noteSchema, notInvolved, reasonSchema, staffName } from './shared'
 import {
-  checkDestination, checkEligibleAt, consentVia, involvedNames, isCrossSite, isFailure, loadTransfer, sideAuthority, siteNameOf, waitingForApproval, type TransferRow,
+  checkDestination, checkEligibleAt, consentVia, exceptionAnswer, exceptionPathOn, involvedNames, isCrossSite, isFailure, loadTransfer, sideAuthority, siteNameOf, waitingForApproval, type TransferRow,
 } from './transferShared'
+import { exceptionNeeds } from './transferException'
 
 const optionalId = idSchema.nullish().transform(v => v ?? null)
 
@@ -76,6 +77,11 @@ export const approveInput = z.object({
    */
   destinationBedId: optionalId,
   note: noteSchema,
+  /**
+   * P-10 (proposed, pending client sign-off): the chosen destination bed fails a gender or grade rule of the destination site. Record the
+   * bed and wait for a Policy Approver's exception instead of refusing. Explicit, never assumed; the destination key is NOT given meanwhile.
+   */
+  askException: z.boolean().optional(),
 })
 export type ApproveTransferInput = z.infer<typeof approveInput>
 export interface ApproveTransferOut {
@@ -85,6 +91,8 @@ export interface ApproveTransferOut {
   keys: { source: boolean; destination: boolean }
   /** Who still has to approve, in plain words (null when nobody). */
   waitingFor: string | null
+  /** True while the destination bed needs a Policy Approver's exception (P-10, proposed, pending client sign-off). */
+  waitingForException?: boolean
 }
 
 export function approveTransfer(rc: RequestContext, i: ApproveTransferInput): Promise<Result<ApproveTransferOut>> {
@@ -95,6 +103,8 @@ export function approveTransfer(rc: RequestContext, i: ApproveTransferInput): Pr
     if (isFailure(sides)) return sides
     const self = notInvolved(c, [t.staffId, t.otherStaffId, t.requestedByStaffId], `approve this ${t.kind}`)
     if (self) return self
+    // D-109: whoever raised it never approves it, whatever role they hold (also when the raiser has no staff record to compare).
+    if (t.requestedBy && t.requestedBy === c.user.id) return fail.sod(`You cannot approve this ${t.kind}: you raised it`, 'An independent approver must do this (D-26, D-109)')
     if (t.status !== 'requested' && t.status !== 'failed') {
       return fail.conflict(`This ${t.kind} is already ${t.status}`, 'Accommodation Admin', t.status === 'approved' ? 'Reception executes it' : 'Raise a new request if it is still wanted')
     }
@@ -118,10 +128,22 @@ export function approveTransfer(rc: RequestContext, i: ApproveTransferInput): Pr
     }
 
     let toBedId = t.toBedId
+    let exceptionWait = false
     if (t.kind === 'swap') {
       const missing = [t.consentAAt ? null : 'the first resident', t.consentBAt ? null : 'the second resident'].filter(Boolean)
       if (missing.length) {
         return fail.conflict(`A swap needs both residents to agree; ${missing.join(' and ')} has not yet`, 'The resident, or the Accommodation Admin recording it', 'Ask them to confirm in the app, or record how they agreed', { reason: 'consent_missing' })
+      }
+      // P-10 (proposed, pending client sign-off): a swap whose destination still needs a Policy Approver's exception is not approved
+      // before that is decided: it would only fail at execution. With the setting off nothing changes.
+      if (await exceptionPathOn(c.tx, t.destinationSiteId)) {
+        const blocked = (await exceptionNeeds(c.tx, t, c.now)).find(n => n.state !== 'blocked')
+        if (blocked) {
+          return fail.conflict(blocked.state === 'declined'
+            ? `A Policy Approver declined the exception this swap needs: ${blocked.declinedReason ?? ''}`.trim()
+            : 'This swap is waiting for a Policy Approver exception (gender or grade rule of the other site)',
+          'Policy Approver', blocked.state === 'declined' ? 'Reject the swap, or withdraw it' : 'The Policy Approver of that site decides it from their approvals inbox', { reason: blocked.state === 'declined' ? 'exception_declined' : 'waiting_for_exception' })
+        }
       }
     } else if (giveDestination) {
       toBedId = i.destinationBedId ?? t.toBedId
@@ -129,30 +151,46 @@ export function approveTransfer(rc: RequestContext, i: ApproveTransferInput): Pr
       const bad = await checkDestination(c.tx, { siteId: t.destinationSiteId, currentBedId: t.fromBedId }, toBedId)
       if (bad) return bad
       if (crossSite) {
-        const ineligible = await checkEligibleAt(c, t.staffId, toBedId)
-        if (ineligible) return ineligible
+        // An exception granted for THIS transfer counts (P-10, proposed, pending client sign-off).
+        const ineligible = await checkEligibleAt(c, t.staffId, toBedId, { transferId: t.id })
+        if (ineligible) {
+          const stop = exceptionAnswer(ineligible, i.askException)
+          if (stop) return stop
+          exceptionWait = true
+        }
       }
     } else if (i.destinationBedId && i.destinationBedId !== t.toBedId) {
       const dst = await siteNameOf(c.tx, t.destinationSiteId)
       return fail.conflict(`Only the Accommodation Admin of ${dst} chooses the bed there`, `Accommodation Admin of ${dst}`, 'Approve without choosing a bed; the destination site’s admin picks one when they approve', { reason: 'bed_chosen_by_destination' })
     }
 
+    // P-10: the destination key is held back while the bed waits for an exception; the source key (if this actor holds it) is still given.
+    const giveDestinationKey = giveDestination && !exceptionWait
+    if (exceptionWait && !giveSource) {
+      await c.tx.update(transferRequest).set({ toBedId }).where(eq(transferRequest.id, t.id))
+      await announceException(c, t, toBedId!, i.note)
+      const waiting = await waitingForApproval(c.tx, t)
+      return ok({ id: t.id, status: (t.status === 'failed' ? 'failed' : 'requested') as 'failed' | 'requested', keys: { source: !!t.sourceApprovedAt, destination: false }, waitingFor: 'a Policy Approver exception', waitingForException: true },
+        `The bed is recorded, but it fails a rule of ${await siteNameOf(c.tx, t.destinationSiteId)}. It waits for a Policy Approver's exception (proposed, pending client sign-off); your approval is not given yet${waiting ? `, and ${waiting.text} still has to approve` : ''}.`)
+    }
     const sourceAt = giveSource ? c.now : t.sourceApprovedAt
-    const destinationAt = giveDestination ? c.now : t.destinationApprovedAt
+    const destinationAt = giveDestinationKey ? c.now : t.destinationApprovedAt
     const complete = !!sourceAt && !!destinationAt
     const keys = { source: !!sourceAt, destination: !!destinationAt }
     await c.tx.update(transferRequest).set({
       toBedId,
       ...(giveSource ? { sourceApprovedBy: c.user.id, sourceApprovedAt: c.now } : {}),
-      ...(giveDestination ? { destinationApprovedBy: c.user.id, destinationApprovedAt: c.now } : {}),
+      ...(giveDestinationKey ? { destinationApprovedBy: c.user.id, destinationApprovedAt: c.now } : {}),
       ...(complete ? { status: 'approved' as const, decidedBy: c.user.id, decidedAt: c.now, decisionReason: i.note } : {}),
     }).where(eq(transferRequest.id, t.id))
+
+    if (exceptionWait) await announceException(c, t, toBedId!, i.note)
 
     const round = t.failureCount
     const [srcName, dstName] = crossSite ? [await siteNameOf(c.tx, t.siteId), await siteNameOf(c.tx, t.destinationSiteId)] : ['', '']
     if (crossSite) {
       // One audit row per key, at the site that gave it, so each site's audit log shows its own decision.
-      for (const [given, side, siteId] of [[giveSource, 'source', t.siteId], [giveDestination, 'destination', t.destinationSiteId]] as const) {
+      for (const [given, side, siteId] of [[giveSource, 'source', t.siteId], [giveDestinationKey, 'destination', t.destinationSiteId]] as const) {
         if (!given) continue
         await audit(c, {
           action: `stays.${t.kind}.approved_${side}`, entityType: 'transfer_request', entityId: t.id, siteId, reason: i.note ?? undefined,
@@ -195,6 +233,22 @@ export function approveTransfer(rc: RequestContext, i: ApproveTransferInput): Pr
   })
 }
 
+/**
+ * P-10 (proposed, pending client sign-off): the bed chosen for the move fails a rule of the destination site and waits for a Policy
+ * Approver. The approval source puts it in their inbox; this audits that it was recorded and tells the Policy Approvers of that site once.
+ */
+async function announceException(c: CommandContext, t: TransferRow, bedId: string, note: string | null) {
+  const bed = await bedLabel(c.tx, bedId)
+  await audit(c, {
+    action: 'stays.transfer.exception_needed', entityType: 'transfer_request', entityId: t.id, siteId: t.destinationSiteId, reason: note ?? undefined,
+    before: { toBedId: t.toBedId }, after: { toBedId: bedId, bed, waitingForException: true, proposal: 'P-10, pending client sign-off' },
+  })
+  await notify(c.tx, {
+    dedupeKey: `transfer:${t.id}:exception-needed:${bedId}`, kind: 'transfer.exception_needed', to: { role: 'PolicyApprover', siteId: t.destinationSiteId }, ref: { type: 'transfer_request', id: t.id },
+    text: `${await staffName(c.tx, t.staffId)} would move into ${bed}, which fails a rule of ${await siteNameOf(c.tx, t.destinationSiteId)} (gender or grade). It waits for your exception decision. Proposed policy, pending client sign-off.`,
+  })
+}
+
 /* ---------------- reject ---------------- */
 
 export const rejectInput = z.object({ id: idSchema, reason: reasonSchema })
@@ -216,6 +270,7 @@ export function rejectTransfer(rc: RequestContext, i: RejectTransferInput): Prom
       if (!sides.source && sides.destination) rejectingSite = t.destinationSiteId
       const self = notInvolved(c, [t.staffId, t.otherStaffId, t.requestedByStaffId], `reject this ${t.kind}`)
       if (self) return self
+      if (t.requestedBy && t.requestedBy === c.user.id) return fail.sod(`You cannot reject this ${t.kind}: you raised it`, 'An independent approver must do this (D-26, D-109). To take it back, withdraw it')
     }
     if (!['requested', 'approved', 'failed'].includes(t.status)) return fail.conflict(`This ${t.kind} is already ${t.status}`, 'Accommodation Admin', 'Nothing more to do')
     if (occupantDeclines && t.status !== 'requested') return fail.conflict('The swap is already approved', 'Accommodation Admin', 'Ask the Accommodation Admin to cancel it')

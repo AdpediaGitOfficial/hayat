@@ -34,6 +34,11 @@ async function loadForInspection(c: CommandContext, taskId: string): Promise<Tas
   if (t.task.status !== 'cleaned') return wrongStage(t.task, 'cleaned')
   if (t.bed.state !== 'inspection_required') return wrongBedState(t.bed, 'inspection_required')
   if (t.task.cleanedByStaff === me) return fail.sod('You cleaned this room, so you cannot inspect it', 'Another Final Inspection holder inspects it (D-26)')
+  // A task opened by hand for a bed with no cleaning record (P-14, proposed, pending client sign-off) has no cleaner. Whoever opened it
+  // has vouched for the room already, so they are not the independent inspector either (D-26). Normal tasks are unaffected.
+  if (!t.task.cleanedByStaff && t.task.assignedBy && t.task.assignedBy === c.user.id) {
+    return fail.sod('You opened this task by hand, so you cannot inspect it', 'Another Final Inspection holder inspects it (D-26)')
+  }
   if (await livesInRoom(c.tx, me, t.roomId)) return ownRoom(t.roomName, 'inspect')
   return t
 }

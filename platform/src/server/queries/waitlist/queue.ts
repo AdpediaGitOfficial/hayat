@@ -12,6 +12,7 @@ import { getConfig } from '@/server/config/registry'
 import { suggestBeds, type BedSuggestion } from '@/server/allocation'
 import { sortQueue } from '@/server/commands/waitlist/queue'
 import { claimDates, offerWindow } from '@/server/commands/waitlist/shared'
+import { offerNotReady } from '@/server/commands/waitlist/offerReadiness'
 import { todayInZone } from '@/server/commands/property/shared'
 
 type Reader = Pick<Db, 'select'>
@@ -157,15 +158,26 @@ export async function myWaitlist(db: Reader, staffId: string, now: Date): Promis
   return { entry, offer: pending ? await offerView(db, pending) : null, lastEnded: ended ? await offerView(db, ended) : null }
 }
 
+/** A bed this person could be offered. `blocked` is set when it is not ready and the hold would start inside the lead time (P-13, proposed, pending client sign-off). */
+export interface OfferCandidate extends BedSuggestion { blocked: { reason: string; owner: string; next: string } | null }
+
 /**
  * Beds this person could be offered, ready beds first (no bed already held or reserved for their dates, not a bed they turned down).
+ * A bed that is not ready is listed WITH the reason it cannot be offered yet, instead of being left out or failing later.
  * Undefined when the actor may not manage offers for the entry's site (answered as not found).
  */
-export async function offerCandidates(db: Reader, actor: Actor, entryId: string, now: Date): Promise<BedSuggestion[] | undefined> {
+export async function offerCandidates(db: Reader, actor: Actor, entryId: string, now: Date): Promise<OfferCandidate[] | undefined> {
   const [row] = await db.select({ e: waitlistEntry, tz: site.timeZone }).from(waitlistEntry).innerJoin(site, eq(site.id, waitlistEntry.siteId)).where(eq(waitlistEntry.id, entryId)).limit(1)
   if (!row || !decide(actor, 'requests_waitlist.manage_offers', { siteId: row.e.siteId }).allowed) return undefined
   if (row.e.status !== 'waiting') return []
   const w = offerWindow(row.e, todayInZone(now, row.tz))
   if (!w) return []
-  return suggestBeds(db, { staffId: row.e.staffId, siteId: row.e.siteId, from: w.from, to: w.to, limit: 12, excludeBedIds: row.e.skipBedIds, requestId: row.e.requestId ?? undefined, now })
+  const today = todayInZone(now, row.tz)
+  const beds = await suggestBeds(db, { staffId: row.e.staffId, siteId: row.e.siteId, from: w.from, to: w.to, limit: 12, excludeBedIds: row.e.skipBedIds, requestId: row.e.requestId ?? undefined, now })
+  const out: OfferCandidate[] = []
+  for (const b of beds) {
+    const refusal = await offerNotReady(db, { id: b.bedId, code: b.code, state: b.state, siteId: row.e.siteId }, w.from, today)
+    out.push({ ...b, blocked: refusal ? { reason: refusal.reason, owner: refusal.owner ?? '', next: refusal.next ?? '' } : null })
+  }
+  return out
 }

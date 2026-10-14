@@ -11,6 +11,7 @@ import { allocateBed } from '@/server/allocation'
 import { notify } from '@/server/notify'
 import { todayInZone } from '@/server/commands/property/shared'
 import { alreadyHoused, matchFreedBed, queuePosition } from './queue'
+import { offerNotReady } from './offerReadiness'
 import { bedLabel, claimDates, endOffer, idSchema, loadEntry, loadOfferLocked, offerWindow, pendingOfferOf, reasonSchema, staffName } from './shared'
 
 export interface OfferOut { offerId: string; entryId: string; bedId: string; claimId: string; from: string; to: string | null; created: boolean }
@@ -56,7 +57,8 @@ export async function createOfferIn(c: CommandContext, i: CreateOfferInput): Pro
     return fail.conflict('This entry has passed its expiry date', 'Accommodation Admin', 'Renew the entry before offering, or add the person again', { reason: 'entry_expired' })
   }
 
-  const [b] = await c.tx.select({ id: bed.id, siteId: bed.siteId, tz: site.timeZone }).from(bed).innerJoin(site, eq(site.id, bed.siteId)).where(eq(bed.id, i.bedId)).limit(1)
+  // The bed row is locked (entry -> offer -> bed): its state cannot change between this check and the hold that allocateBed makes.
+  const [b] = await c.tx.select({ id: bed.id, siteId: bed.siteId, state: bed.state, tz: site.timeZone }).from(bed).innerJoin(site, eq(site.id, bed.siteId)).where(eq(bed.id, i.bedId)).limit(1).for('update', { of: bed })
   if (!b) return fail.notFound()
   const bedDenied = authorize(c, 'requests_waitlist.manage_offers', { siteId: b.siteId })
   if (bedDenied) return bedDenied
@@ -65,8 +67,12 @@ export async function createOfferIn(c: CommandContext, i: CreateOfferInput): Pro
   if (e.skipBedIds.includes(b.id)) {
     return fail.conflict(`This person already turned down, or did not answer, an offer of bed ${lbl.code}`, 'Accommodation Admin', 'Offer a different bed (D-50: a declined bed is skipped)', { reason: 'bed_skipped' })
   }
-  const w = offerWindow(e, todayInZone(c.now, b.tz))
+  const today = todayInZone(c.now, b.tz)
+  const w = offerWindow(e, today)
   if (!w) return fail.conflict('The stay this person asked for is already over', 'Accommodation Admin', 'Renew the entry with new dates', { reason: 'window_over' })
+  // P-13 (proposed, pending client sign-off, `readiness.offer_lead_days`): a bed that is not ready is not offered for a start inside the lead time.
+  const notReady = await offerNotReady(c.tx, { id: b.id, code: lbl.code, state: b.state, siteId: b.siteId }, w.from, today)
+  if (notReady) return notReady
   if (await alreadyHoused(c.tx, e.staffId)) return fail.conflict('This person already has a reservation or a bed', 'Accommodation Admin', 'Take them off the waitlist or cancel the reservation', { reason: 'already_housed' })
 
   // Queue discipline: the bed goes to the next eligible person unless an authorised admin overrides, with a reason.

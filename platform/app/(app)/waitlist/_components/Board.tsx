@@ -9,7 +9,7 @@ import { Problem } from './Problem'
 import { dates, fmtWhen } from './format'
 
 export interface Perms { add: boolean; manage: boolean; offer: boolean; offline: boolean; behalf: boolean; decide: boolean }
-interface BedChoice { bedId: string; code: string; roomName: string; state: string }
+interface BedChoice { bedId: string; code: string; roomName: string; state: string; blocked: { reason: string; owner: string; next: string } | null }
 type Modal =
   | { kind: 'add' }
   | { kind: 'offer' | 'renew' | 'priority' | 'decide'; entry: QueueEntryView }
@@ -133,7 +133,7 @@ function OfferModal({ entry, onClose }: { entry: QueueEntryView; onClose: () => 
     return () => { live = false }
   }, [entry.id])
   const fields = [
-    { name: 'bedId', label: 'Bed to hold', kind: 'select' as const, options: (beds ?? []).map(b => ({ value: b.bedId, label: `${b.code} · ${b.roomName}${b.state === 'available' ? '' : ' (not ready yet)'}` })) },
+    { name: 'bedId', label: 'Bed to hold', kind: 'select' as const, options: (beds ?? []).filter(b => !b.blocked).map(b => ({ value: b.bedId, label: `${b.code} · ${b.roomName}${b.state === 'available' ? '' : ' (not ready yet, later start)'}` })) },
     ...(override ? [{ name: 'overrideReason', label: 'Reason for skipping the queue order', kind: 'text' as const, hint: 'Someone is ahead of this person. The reason is kept in the audit log.' }] : []),
   ]
   return (
@@ -147,6 +147,10 @@ function OfferModal({ entry, onClose }: { entry: QueueEntryView; onClose: () => 
       }}>
       {loadErr && <Problem f={loadErr} />}
       {beds && beds.length === 0 && <Blocked why="No bed is free for this person's dates." owner="Accommodation Admin" next="Wait for a bed to be released, or adjust the dates when renewing the entry." />}
+      {/* P-13 (proposed, pending client sign-off): beds that are not ready cannot be offered for a start inside the lead time; shown with the reason. */}
+      {beds && beds.filter(b => b.blocked).map(b => (
+        <div key={b.bedId} style={{ marginTop: 8 }} data-testid="offer-blocked-bed"><Blocked why={`${b.code} · ${b.roomName}: ${b.blocked!.reason}`} owner={b.blocked!.owner} next={b.blocked!.next} /></div>
+      ))}
     </FormModal>
   )
 }

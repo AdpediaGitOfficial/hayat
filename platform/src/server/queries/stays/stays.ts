@@ -173,14 +173,21 @@ async function listStaysByIds(actor: Actor, ids: string[], now: Date) {
   return { rows }
 }
 
-/** What the viewer can do about a stay, from the policy (the commands re-check everything). */
-export function stayAbilities(actor: Actor, s: { siteId: string; staffId: string }) {
+/** P-09 (proposed, pending client sign-off): may Reception raise a transfer or swap? Screens pass this to stayAbilities. */
+export const receptionMayRaise = () => getConfig(getDb(), 'transfers.reception_may_raise')
+
+/**
+ * What the viewer can do about a stay, from the policy (the commands re-check everything). Reception holds the request action in the
+ * policy table for the proposal P-09 (pending client sign-off); it counts only when `receptionMayRaise` is true, the setting.
+ */
+export function stayAbilities(actor: Actor, s: { siteId: string; staffId: string }, o: { receptionMayRaise?: boolean } = {}) {
   const own = { siteId: s.siteId, ownerStaffId: s.staffId }
   const mine = actor.staffId === s.staffId
+  const mayRequest = can(actor, 'transfers_swaps.request', own) && (actor.role !== 'Rec' || !!o.receptionMayRaise)
   return {
     requestExtension: can(actor, 'reservations_stays.request_extension', own) || can(actor, 'reservations_stays.approve_extension', own),
     requestCheckout: can(actor, 'reservations_stays.request_checkout', own),
-    requestTransfer: can(actor, 'transfers_swaps.request', own) || can(actor, 'transfers_swaps.approve', own),
+    requestTransfer: mayRequest || can(actor, 'transfers_swaps.approve', own),
     processCheckout: can(actor, 'checkin_checkout.execute', own) && !mine,
     approveTransfer: can(actor, 'transfers_swaps.approve', own),
     executeTransfer: can(actor, 'transfers_swaps.execute', own),
@@ -211,7 +218,7 @@ export async function destinationOptions(actor: Actor, stayId: string, siteId: s
   const { rows } = await listStaysByIds(actor, [stayId], now)
   const s = rows[0]
   if (!s || s.status !== 'active') return undefined
-  const ab = stayAbilities(actor, { siteId: s.siteId, staffId: s.staffId })
+  const ab = stayAbilities(actor, { siteId: s.siteId, staffId: s.staffId }, { receptionMayRaise: await receptionMayRaise() })
   if (!ab.requestTransfer) return undefined
   const db = getDb()
   const [dest] = await db.select({ id: site.id, name: site.name, tz: site.timeZone, archivedAt: site.archivedAt }).from(site).where(eq(site.id, siteId)).limit(1)

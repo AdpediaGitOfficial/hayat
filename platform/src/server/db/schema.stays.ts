@@ -102,8 +102,22 @@ export const checkoutRequest = pgTable('checkout_request', {
   updatedAt: updatedAt(),
 })
 
+/** A Policy Approver's decline of a transfer exception (migration 0160, P-10 proposed, pending client sign-off). A grant is an eligibility_exception row. Append-only. */
+export const transferExceptionDecision = pgTable('transfer_exception_decision', {
+  id: id(),
+  transferRequestId: uuid('transfer_request_id').notNull(),
+  staffId: uuid('staff_id').notNull(),
+  bedId: uuid('bed_id').notNull(),
+  siteId: uuid('site_id').notNull(),
+  decision: text('decision').$type<'declined'>().notNull(),
+  reason: text('reason').notNull(),
+  decidedBy: uuid('decided_by').notNull(),
+  createdAt: createdAt(),
+})
+
 export const TABLES_STAYS = {
   extension_request: extensionRequest,
   transfer_request: transferRequest,
   checkout_request: checkoutRequest,
+  transfer_exception_decision: transferExceptionDecision,
 } as const

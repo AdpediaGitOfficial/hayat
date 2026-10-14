@@ -19,6 +19,8 @@ const KIND: Record<string, { label: string; cta: string }> = {
   transfer_in: { label: 'Transfer (into this site)', cta: 'Review transfer' },
   swap: { label: 'Bed swap (from this site)', cta: 'Review swap' },
   swap_in: { label: 'Bed swap (into this site)', cta: 'Review swap' },
+  transfer_exception: { label: 'Transfer exception (proposed policy)', cta: 'Review exception' },
+  transfer_exception_other: { label: 'Swap exception (proposed policy)', cta: 'Review exception' },
   extension: { label: 'Stay extension', cta: 'Review extension' },
   emergency: { label: 'Emergency check-in', cta: 'Review case' },
 }

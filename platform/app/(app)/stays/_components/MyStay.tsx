@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import type { CurrentUser } from '@/server/auth/current'
-import { getStayDetail, listStays, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
+import { getStayDetail, listStays, receptionMayRaise, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
 import { Alert, Blocked, GlassCard, Status } from '@/ui'
 import { fmtDate, fmtDateLong } from '@/domain/time'
 import { FlagBadge } from './FlagBadge'
@@ -28,7 +28,7 @@ export async function renderMyStay(cur: CurrentUser): Promise<ReactNode | null> 
   }
   const d = await getStayDetail(actor, current.id, now)
   if (!d) return null
-  const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId })
+  const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId }, { receptionMayRaise: await receptionMayRaise() })
   const active = d.status === 'active'
   const ctx = { id: d.id, name: d.name, from: d.from, to: d.to, active }
   const canAsk = active && ab.requestTransfer && !d.openTransfer

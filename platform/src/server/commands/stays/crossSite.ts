@@ -19,15 +19,17 @@
  *    closed or withdrawn with the reason "moved to <site>", the person and the site that held it are told, and it is audited. The
  *    hold on a bed is released in the same step, so nothing is left dangling.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
 import { reservation } from '@/server/db/schema'
+import { bedOffer, waitlistEntry } from '@/server/db/schema.waitlist'
 import { checkoutRequest, extensionRequest } from '@/server/db/schema.stays'
 import { audit } from '@/server/audit'
 import type { CommandContext } from '@/server/command/context'
 import { releaseClaim } from '@/server/allocation'
 import { notify } from '@/server/notify'
 import { closeEntriesForStaff, withdrawOffersForStaff } from '@/server/commands/waitlist/close'
-import { bedLabel } from './shared'
+import { getConfig } from '@/server/config/registry'
+import { bedLabel, staffName } from './shared'
 import { siteNameOf } from './transferShared'
 
 export interface CrossSiteMove {
@@ -80,11 +82,24 @@ registerCrossSiteFollowUp('stay_requests', async (c, m) => {
 
 /* ---------------- built in: future bookings that can no longer stand ---------------- */
 
+/**
+ * `transfers.future_bookings` (P-12, PROPOSED, pending client sign-off): what happens to a future reservation, a waitlist entry or a pending
+ * bed offer a person still has after moving to another site.
+ *   cancel  (the shipped default, the Stage 3 behaviour): they are cancelled, closed and withdrawn, the holds released, the person told.
+ *   review: they are LEFT as they are and the Accommodation Admin of the NEW site is told once, with the list, so a person decides.
+ * Both are audited. Nothing is ever left half done: in cancel mode no claim, entry or offer of the person survives; in review mode the
+ * list in the notification and the audit row is exactly what was left. None of this can exist today unless a record was arranged by hand
+ * or imported (a request is refused while the person has a bed), so this is a guard.
+ */
 registerCrossSiteFollowUp('future_bookings', async (c, m) => {
   const toName = await siteNameOf(c.tx, m.toSiteId)
   const why = `Moved to ${toName} by a transfer`
+  const mode = await getConfig(c.tx, 'transfers.future_bookings', m.toSiteId)
   const rows = await c.tx.select({ id: reservation.id, bedId: reservation.bedId, claimId: reservation.claimId })
     .from(reservation).where(and(eq(reservation.staffId, m.staffId), eq(reservation.status, 'reserved'), isNull(reservation.archivedAt))).for('update')
+
+  if (mode === 'review') return reviewInstead(c, m, rows, toName)
+
   for (const r of rows) {
     await releaseClaim(c.tx, r.claimId, `Reservation cancelled: ${why}`, c.now)
     await c.tx.update(reservation).set({ status: 'cancelled', cancelReason: why }).where(eq(reservation.id, r.id))
@@ -94,5 +109,28 @@ registerCrossSiteFollowUp('future_bookings', async (c, m) => {
   }
   const entries = await closeEntriesForStaff(c, m.staffId, why)
   const offers = await withdrawOffersForStaff(c, m.staffId, why)
-  return { reservationsCancelled: rows.length, waitlistEntriesClosed: entries, offersWithdrawn: offers }
+  return { mode: 'cancel', reservationsCancelled: rows.length, waitlistEntriesClosed: entries, offersWithdrawn: offers }
 })
+
+/** Review mode: nothing is cancelled. The Accommodation Admin of the new site gets one notification per person and move, with the list. */
+async function reviewInstead(c: CommandContext, m: CrossSiteMove, rows: { id: string; bedId: string; claimId: string }[], toName: string): Promise<FollowUpOutcome> {
+  const entries = await c.tx.select({ id: waitlistEntry.id, siteId: waitlistEntry.siteId, arrival: waitlistEntry.arrivalDate }).from(waitlistEntry)
+    .where(and(eq(waitlistEntry.staffId, m.staffId), ne(waitlistEntry.status, 'closed')))
+  const offers = await c.tx.select({ id: bedOffer.id, bedId: bedOffer.bedId }).from(bedOffer).where(and(eq(bedOffer.staffId, m.staffId), eq(bedOffer.status, 'pending')))
+  if (rows.length + entries.length + offers.length === 0) return { mode: 'review', reservationsLeft: 0, waitlistEntriesLeft: 0, offersLeft: 0 }
+
+  const lines: string[] = []
+  for (const r of rows) lines.push(`reservation for ${await bedLabel(c.tx, r.bedId)}`)
+  for (const o of offers) lines.push(`bed offer pending for ${await bedLabel(c.tx, o.bedId)}`)
+  for (const e of entries) lines.push(`waitlist entry at ${await siteNameOf(c.tx, e.siteId)} (arrival ${e.arrival})`)
+  const who = await staffName(c.tx, m.staffId)
+  await audit(c, {
+    action: 'stays.transfer.bookings_left_for_review', entityType: 'stay', entityId: m.stayId, siteId: m.toSiteId, reason: `Moved to ${toName} by a transfer; future bookings left for review (P-12, pending client sign-off)`,
+    after: { transferId: m.transferId, staffId: m.staffId, reservationIds: rows.map(r => r.id), waitlistEntryIds: entries.map(e => e.id), offerIds: offers.map(o => o.id), list: lines },
+  })
+  await notify(c.tx, {
+    dedupeKey: `transfer:${m.transferId}:future_bookings:${m.staffId}`, kind: 'transfer.bookings_to_review', to: { role: 'AA', siteId: m.toSiteId }, ref: { type: 'stay', id: m.stayId },
+    text: `${who} moved to ${toName} and still has ${lines.length === 1 ? 'a booking' : `${lines.length} bookings`} elsewhere: ${lines.join('; ')}. Nothing was cancelled. Please review and cancel what is no longer needed.`,
+  })
+  return { mode: 'review', reservationsLeft: rows.length, waitlistEntriesLeft: entries.length, offersLeft: offers.length }
+}

@@ -17,6 +17,7 @@ import { getConfig } from '@/server/config/registry'
 import { notify } from '@/server/notify'
 import { todayInZone } from '@/server/commands/property/shared'
 import { bedLabel, offerWindow, staffName, type EntryRow } from './shared'
+import { offerNotReady } from './offerReadiness'
 
 type Reader = Pick<Tx, 'select'>
 
@@ -41,7 +42,14 @@ export async function queuePosition(q: Reader, siteId: string, entryId: string):
   return i < 0 ? undefined : i + 1
 }
 
-export interface Match { entryId: string; staffId: string; siteId: string; position: number; from: string; to?: string }
+export interface Match {
+  entryId: string; staffId: string; siteId: string; position: number; from: string; to?: string
+  /**
+   * Set when the bed is not ready and the hold would start inside the lead time (P-13, proposed, pending client sign-off): the match is
+   * still shown, with the reason, owner and next action, but an offer on it is refused until the bed is ready or the start is later.
+   */
+  notReady?: { reason: string; owner: string; next: string }
+}
 
 /** Whether this person can be housed at all right now: no reservation waiting, no bed already (a pending offer is the entry's own business). */
 export async function alreadyHoused(q: Reader, staffId: string): Promise<boolean> {
@@ -61,7 +69,7 @@ export async function matchFreedBed(q: Reader, bedId: string, now: Date, o: { li
 }
 
 export async function matchesForBed(q: Reader, bedId: string, now: Date, o: { limit?: number } = {}): Promise<Match[]> {
-  const [b] = await q.select({ siteId: bed.siteId, state: bed.state, archivedAt: bed.archivedAt, tz: site.timeZone }).from(bed).innerJoin(site, eq(site.id, bed.siteId)).where(eq(bed.id, bedId)).limit(1)
+  const [b] = await q.select({ siteId: bed.siteId, code: bed.code, state: bed.state, archivedAt: bed.archivedAt, tz: site.timeZone }).from(bed).innerJoin(site, eq(site.id, bed.siteId)).where(eq(bed.id, bedId)).limit(1)
   if (!b || b.archivedAt || ['blocked', 'under_maintenance', 'archived'].includes(b.state)) return []
   const order = await queueOrder(q, b.siteId)
   if (order.length === 0) return []
@@ -77,7 +85,11 @@ export async function matchesForBed(q: Reader, bedId: string, now: Date, o: { li
     if (await alreadyHoused(q, e.staffId)) continue
     const el = await checkEligibility(q, e.staffId, bedId, now, { requestId: e.requestId ?? undefined })
     if (!el?.ok) continue
-    out.push({ entryId: e.id, staffId: e.staffId, siteId: b.siteId, position: i + 1, from: w.from, to: w.to })
+    const refusal = await offerNotReady(q, { id: bedId, code: b.code, state: b.state, siteId: b.siteId }, w.from, today)
+    out.push({
+      entryId: e.id, staffId: e.staffId, siteId: b.siteId, position: i + 1, from: w.from, to: w.to,
+      ...(refusal ? { notReady: { reason: refusal.reason, owner: refusal.owner ?? '', next: refusal.next ?? '' } } : {}),
+    })
     if (out.length >= (o.limit ?? 1)) break
   }
   return out
@@ -95,7 +107,10 @@ export async function notifyFreedBed(tx: Tx, bedId: string, now: Date, eventKey:
   return notify(tx, {
     dedupeKey: `waitlist:bed:${bedId}:${eventKey}:next`, kind: 'waitlist.bed_free',
     to: { role: 'AA', siteId: next.siteId },
-    text: `Bed ${b.code} (${b.roomName}) is free from ${next.from}. Next in the waitlist queue: ${who} (position ${next.position}). Open the waitlist to offer it.`,
+    // A bed that is not ready yet is shown with the reason (P-13), so nobody tries to offer it too early.
+    text: next.notReady
+      ? `Bed ${b.code} (${b.roomName}) is free from ${next.from} but not ready yet. ${next.notReady.reason}. Owner: ${next.notReady.owner}. Next: ${next.notReady.next}. Next in the waitlist queue: ${who} (position ${next.position}).`
+      : `Bed ${b.code} (${b.roomName}) is free from ${next.from}. Next in the waitlist queue: ${who} (position ${next.position}). Open the waitlist to offer it.`,
     ref: { type: 'waitlist_entry', id: next.entryId },
   })
 }

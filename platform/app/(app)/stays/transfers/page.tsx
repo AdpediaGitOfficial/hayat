@@ -2,7 +2,9 @@ import Link from 'next/link'
 import { requirePage } from '@/server/auth/page'
 import { can } from '@/server/policy'
 import { listTransfers } from '@/server/queries/stays/transfers'
-import { listStays } from '@/server/queries/stays/stays'
+import { listStays, receptionMayRaise } from '@/server/queries/stays/stays'
+import { getConfig } from '@/server/config/registry'
+import { getDb } from '@/server/db/client'
 import { Badge, Blocked, GlassCard, PageHeader } from '@/ui'
 import { fmtDate } from '@/domain/time'
 import { SwapForm } from '../_components/SwapForm'
@@ -19,7 +21,10 @@ export default async function Transfers({ searchParams }: { searchParams: Record
   const { actor } = cur.rc
   const all = searchParams.all === '1'
   const rows = await listTransfers(actor, { status: all ? undefined : 'open' })
-  const canPropose = can(actor, 'transfers_swaps.approve')
+  // Reception raises swaps only while the proposal P-09 is switched on (pending client sign-off); the server refuses it otherwise.
+  const canPropose = can(actor, 'transfers_swaps.approve') || (actor.role === 'Rec' && can(actor, 'transfers_swaps.request') && await receptionMayRaise())
+  const partnerLookup = canPropose && await getConfig(getDb(), 'transfers.swap_partner_lookup')
+  const exceptionPath = await getConfig(getDb(), 'transfers.exception_path')
   const active = canPropose ? (await listStays(actor, { status: 'active', limit: 500 })).rows.filter(s => s.name !== 'Resident') : []
 
   return (
@@ -43,13 +48,14 @@ export default async function Transfers({ searchParams }: { searchParams: Record
                 </>}
                 {t.decisionReason && <><dt>Decision</dt><dd>{t.decisionReason}</dd></>}
               </dl>
-              {t.waiting && t.status !== 'failed' && t.crossSite && !t.can.approve && <div style={{ marginBottom: 12 }}><Blocked why={t.waiting.text} owner={t.waiting.owner} next={t.waiting.next} /></div>}
+              {t.raisedBy && <p className="muted body-sm" style={{ margin: '0 0 8px' }}>Raised for the resident by {t.raisedBy.name}. Whoever raised a move never approves it.</p>}
+              {t.waiting && t.status !== 'failed' && t.crossSite && !t.can.approve && !t.exceptions.some(e => e.state === 'waiting') && <div style={{ marginBottom: 12 }}><Blocked why={t.waiting.text} owner={t.waiting.owner} next={t.waiting.next} /></div>}
               {t.status === 'failed' && t.failureReason && <div style={{ marginBottom: 12 }}><Blocked why={t.failureReason} owner="Accommodation Admin" next={t.failureNext ?? 'Choose another destination bed and approve the move again'} /></div>}
               <TransferActions t={t} />
             </GlassCard>
           ))}
         </div>
-        {canPropose && <div className="stack" style={{ alignSelf: 'start' }}><SwapForm choices={active.map(s => ({ stayId: s.id, label: `${s.name} · ${s.bedLabel}` }))} /></div>}
+        {canPropose && <div className="stack" style={{ alignSelf: 'start' }}><SwapForm choices={active.map(s => ({ stayId: s.id, label: `${s.name} · ${s.bedLabel}` }))} partnerLookup={partnerLookup} exceptionPath={exceptionPath} /></div>}
       </div>
     </>
   )
