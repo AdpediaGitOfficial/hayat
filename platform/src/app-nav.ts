@@ -24,6 +24,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-A nav
 
   // >>> WP-B nav (staff)
+  { id: 'staff', label: 'Staff', href: '/staff', icon: 'users', group: 'People', actions: ['staff_directory.view', 'staff_directory.lookup_minimum', 'staff_directory.identity_check'] },
+  { id: 'my-profile', label: 'My profile', href: '/staff/me', icon: 'user', group: 'People', actions: ['staff_directory.view_own'] },
   // <<< WP-B nav
 
   // >>> WP-C nav (users, configuration, audit)
