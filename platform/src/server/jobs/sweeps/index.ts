@@ -16,6 +16,7 @@ import './stays'
 // <<< WP-F sweeps
 
 // >>> WP-H sweeps (clearance overdue)
+import './exit'
 // <<< WP-H sweeps
 
 // >>> WP-I sweeps (keys overdue)

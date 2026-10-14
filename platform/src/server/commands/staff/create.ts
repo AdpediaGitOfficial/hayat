@@ -32,13 +32,16 @@ export type CreateStaffInput = z.infer<typeof input>
  * merged. Only an actor who may view the directory also learns whose record it is.
  */
 export async function duplicateFailure(c: Pick<CommandContext, 'tx' | 'actor'>, key: string): Promise<Failure> {
-  const [ex] = await c.tx.select({ id: staffProfile.id, employeeId: staffProfile.employeeId, fullName: staffProfile.fullName, archivedAt: staffProfile.archivedAt })
+  const [ex] = await c.tx.select({ id: staffProfile.id, employeeId: staffProfile.employeeId, fullName: staffProfile.fullName, archivedAt: staffProfile.archivedAt, employmentStatus: staffProfile.employmentStatus, leftEffective: staffProfile.leftEffective, leftAt: staffProfile.leftAt })
     .from(staffProfile).where(sql`lower(btrim(${staffProfile.employeeId})) = ${key}`).limit(1)
   const mayView = staffAccess(c.actor)?.shape === 'full'
   if (!ex) return fail.conflict('That employee ID was just taken by another change', 'Accommodation Admin', 'Search for the employee ID and open the existing record')
   const who = mayView ? ` (${ex.fullName}${ex.archivedAt ? ', archived' : ''})` : ''
+  // WP-H: a former employee who returns is rehired on the existing profile (D-41), never added a second time.
+  const leftOn = ex.leftEffective ?? ex.leftAt?.toISOString().slice(0, 10)
+  const rehire = ex.employmentStatus === 'left' && !ex.archivedAt ? `. This employee left on ${leftOn ?? 'an earlier date'}: use Rehire` : ''
   const f = fail.conflict(
-    `Employee ID ${ex.employeeId} already exists${who}. A second profile is never created and records are never merged automatically`,
+    `Employee ID ${ex.employeeId} already exists${who}. A second profile is never created and records are never merged automatically${rehire}`,
     'Accommodation Admin',
     ex.archivedAt ? 'This profile is archived. Ask a Super Admin whether it should be reinstated; do not reuse the ID' : 'Open the existing record, or check the employee ID with HR',
     mayView ? { existingStaffId: ex.id } : undefined,

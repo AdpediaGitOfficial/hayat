@@ -1,6 +1,7 @@
 /** Importing this file registers every attachment target. Each work package adds ONE import inside its own marked block. */
 
 // >>> WP-H attachment targets (clearance items, waivers)
+import '@/server/commands/exit/attachments'
 // <<< WP-H attachment targets
 
 // >>> WP-I attachment targets (key damage and loss)

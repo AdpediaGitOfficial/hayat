@@ -48,6 +48,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-G nav
 
   // >>> WP-H nav (exit and clearance)
+  // Cases and Mark as Left: SA, AA, Reception, Maintenance Coordinator, Manager, Auditor (each page narrows to what that role may do).
+  { id: 'exits', label: 'Exits & clearance', href: '/exits', icon: 'clipboard', group: 'Accommodation', actions: ['exit_clearance.view'] },
   // <<< WP-H nav
 
   // >>> WP-I nav (keys and assets)
