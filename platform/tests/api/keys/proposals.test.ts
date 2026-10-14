@@ -476,24 +476,39 @@ describe('AT-035 P-05: a resident reports their own key lost', () => {
   })
 })
 
-describe('a failure after the write rolls the whole movement back (the event and the audit share one transaction)', () => {
-  it('a movement whose audit row cannot be written leaves the item, the event log and the audit log untouched', async () => {
+describe('AT-035: a failure after the write rolls the whole movement back (the event and the audit share one transaction)', () => {
+  type Scene = Awaited<ReturnType<typeof scene>>
+  const movements: { name: string; item: (s: Scene) => Promise<string>; run: (s: Scene, id: string, newCode: string) => Promise<{ ok: boolean; code?: string }> }[] = [
+    { name: 'issue', item: async s => s.itemId, run: (s, id) => issue(s.rec, id, s.res.staffId) },
+    { name: 'return', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId }), run: (s, id) => returnItem(s.rec.rc, { itemId: id, note: null }) },
+    { name: 'lost', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId }), run: (s, id) => markLost(s.rec.rc, { itemId: id, note: 'Lost at the pool' }) },
+    { name: 'damaged', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId }), run: (s, id) => markDamaged(s.rec.rc, { itemId: id, note: 'Bent in the lock' }) },
+    { name: 'found', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId, status: 'lost' }), run: (s, id) => foundItem(s.rec.rc, { itemId: id, to: 'holder', note: null }) },
+    { name: 'retire', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId, status: 'lost' }), run: (s, id) => retireItem(s.aa.rc, { itemId: id, reason: 'Written off' }) },
+    { name: 'replace', item: s => w.mkItem({ siteId: s.siteId, bedId: s.bedIds[0], holderStaffId: s.res.staffId, status: 'damaged' }), run: (s, id, code) => replaceItem(s.aa.rc, { itemId: id, newCode: code, note: null }) },
+  ]
+
+  it.each(movements.map(m => [m.name, m] as const))('%s: if the audit row cannot be written after the event, the item, the event log, the audit log and the notifications are all untouched', async (_n, m) => {
     const s = await scene()
-    // The audit table is made to refuse exactly this item's rows: the event is written first, so this proves they stand or fall together.
-    await w.q(`CREATE OR REPLACE FUNCTION test_refuse_audit() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN IF NEW.entity_id = '${s.itemId}' THEN RAISE EXCEPTION 'audit refused for the test'; END IF; RETURN NEW; END $f$`)
+    const id = await m.item(s)
+    const newCode = uniq('NEW')
+    const state = async () => JSON.stringify([await w.itemRow(id), await w.events(id), await w.audits(id), await w.notesAbout(id)])
+    const before = await state()
+    // The audit table is made to refuse exactly this item's rows. The event is written first, so a refusal proves they stand or fall together.
+    await w.q(`CREATE OR REPLACE FUNCTION test_refuse_audit() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN IF NEW.entity_id = '${id}' THEN RAISE EXCEPTION 'audit refused for the test'; END IF; RETURN NEW; END $f$`)
     await w.q(`CREATE TRIGGER test_refuse_audit BEFORE INSERT ON audit_event FOR EACH ROW EXECUTE FUNCTION test_refuse_audit()`)
     try {
-      const r = await issue(s.rec, s.itemId, s.res.staffId)
+      const r = await m.run(s, id, newCode)
       expect(r).toMatchObject({ ok: false, code: 'internal' })
-      expect(await w.itemRow(s.itemId)).toMatchObject({ status: 'in_cabinet', holder_staff_id: null })
-      expect(await w.events(s.itemId)).toHaveLength(0)
-      expect(await w.audits(s.itemId)).toHaveLength(0)
+      expect(await state()).toBe(before)
+      expect((await w.q(`SELECT 1 FROM handover_item WHERE lower(code) = lower($1)`, [newCode])).rowCount).toBe(0)   // a replacement is not left behind either
     } finally {
       await w.q(`DROP TRIGGER test_refuse_audit ON audit_event`)
     }
-    expect((await issue(s.rec, s.itemId, s.res.staffId)).ok).toBe(true)
-    expect(await w.events(s.itemId)).toHaveLength(1)
-    expect(await w.audits(s.itemId)).toHaveLength(1)
+    // with the refusal gone the same movement works, and leaves exactly one event and one audit row for the item
+    const r2 = await m.run(s, id, newCode)
+    expect(r2.ok, m.name).toBe(true)
+    expect((await w.events(id)).length).toBe(1)
+    expect((await w.audits(id)).filter(a => a.action !== 'keys.item.created').length).toBe(1)
   })
 })
-
