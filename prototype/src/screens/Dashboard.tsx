@@ -9,6 +9,7 @@ import { activeStayOfStaff, bedById, resStatusView, roomOf, staffById, stayState
 import { fmtDate, fmtDateTime, fmtTime, greeting, today, addDays, dateStr, HOUR } from '../domain/time'
 import { ROLE_LABEL } from '../roles'
 import { CheckInModal } from './Allocations'
+import { CloseIncidentModal } from './Misc'
 import { ResidentHome } from './ResidentHome'
 
 export function Dashboard() {
@@ -68,10 +69,10 @@ function AdminHome() {
           <Button variant="primary" icon="plus" onClick={() => go('allocations', { bulk: '1' })}>Allocate bed</Button>
         </>} />
       <div className="grid stats">
-        <StatTile label="Occupancy" value={((occ.occupied / (occ.total || 1)) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, (occ.occupied / (occ.total || 1)) * 100]} delta={{ text: '2.1 pts', trend: 'up' }} hint="vs last month" onClick={() => go('inventory')} />
+        <StatTile label="Occupancy" value={((occ.occupied / (occ.total || 1)) * 100).toFixed(1)} unit="%" hint={`${occ.occupied} of ${occ.total} active beds`} icon="bed" onClick={() => go('inventory')} />
         <StatTile label="Arrivals today" value={p.arrivals.length + p.checkedInToday.length} icon="login" hint={`${notReadyArrivals.length} not ready`} onClick={() => go('allocations')} />
-        <StatTile label="Pending approvals" value={inbox.length} spark={[3, 5, 4, 6, 5, 7, inbox.length]} delta={{ text: '2', trend: 'up', good: false }} hint="vs yesterday" onClick={() => go('approvals')} goodUp={false} />
-        <StatTile label="Waitlist" value={s.waitlist.filter(w => w.status !== 'Closed').length} spark={[12, 11, 12, 10, 9, 9, s.waitlist.filter(w => w.status !== 'Closed').length]} delta={{ text: '3', trend: 'down' }} hint="joiners waiting" onClick={() => go('waitlist')} />
+        <StatTile label="Pending approvals" value={inbox.length} icon="checkCircle" hint={`${inbox.filter(i => i.level > 0).length} escalated`} onClick={() => go('approvals')} />
+        <StatTile label="Waitlist" value={s.waitlist.filter(w => w.status !== 'Closed').length} icon="hourglass" hint={`${s.offers.filter(o => o.status === 'Pending').length} offers open`} onClick={() => go('waitlist')} />
       </div>
       <div className="grid two">
         <NeedsAction items={items} onViewAll={() => go('approvals')} />
@@ -153,7 +154,7 @@ function ReceptionHome() {
     { key: 'ci', icon: 'login' as const, tone: 'brand' as const, title: 'Arrivals to check in', meta: 'Reserved for today', count: p.arrivals.length, onClick: () => go('allocations') },
     { key: 'ns', icon: 'alert' as const, tone: 'danger' as const, title: 'No-shows', meta: 'ETA passed. Reservation expires 24h later', count: noShow.length, onClick: () => go('allocations') },
     { key: 'of', icon: 'phone' as const, tone: 'warning' as const, title: 'Offers to deliver in person', meta: 'Resident hasn’t viewed the offer', count: followUps.length, onClick: () => go('waitlist') },
-    { key: 'co', icon: 'exit' as const, tone: 'warning' as const, title: 'Checkout requests', meta: 'Acknowledge within 1 business day', count: checkoutReq.length, onClick: () => go('exits') },
+    { key: 'co', icon: 'exit' as const, tone: 'warning' as const, title: 'Checkout requests', meta: `${checkoutReq.filter(x => !x.checkoutAckAt).length} to acknowledge within 1 business day`, count: checkoutReq.length, onClick: () => go('exits') },
     { key: 'tr', icon: 'swap' as const, tone: 'info' as const, title: 'Approved transfers to execute', meta: 'Atomic: failure leaves residents in place', count: approvedTransfers.length, onClick: () => go('transfers') },
     { key: 'cl', icon: 'brush' as const, tone: 'info' as const, title: 'Cleaning to assign', meta: 'Beds waiting for housekeeping', count: cleaning.length, onClick: () => go('housekeeping') },
     { key: 'in', icon: 'shield' as const, tone: 'info' as const, title: 'Final inspections', meta: 'Bed isn’t Available until inspected', count: inspections.length, onClick: () => go('housekeeping') },
@@ -231,6 +232,7 @@ function JobsHome() {
 function SecurityHome() {
   const { s, persona, now, go } = useCtx()
   const act = useAct()
+  const [closing, setClosing] = useState<string | null>(null)
   const T = today(now)
   const sos = s.incidents.filter(i => !i.closed)
   const arrivals = s.reservations.filter(r => r.status === 'Reserved' && r.from <= T)
@@ -241,16 +243,17 @@ function SecurityHome() {
         <StatTile label="Open SOS / incidents" value={sos.length} icon="siren" goodUp={false} hint={`acknowledge within ${s.config.sosAckMinutes} min`} onClick={() => go('incidents')} />
         <StatTile label="Expected arrivals" value={arrivals.length} icon="login" hint="for gate verification" />
         <StatTile label="Keys out of hours" value={s.keys.filter(k => k.status === 'Issued').length} icon="key" hint="Night Keys capability" onClick={() => go('keys')} />
-        <StatTile label="Contractors on site" value={1} icon="truck" hint="CoolAir Services · 09:00–17:00" />
+        <StatTile label="Contractors on site" value={s.contractorVisits.filter(v => v.status === 'Checked in').length} icon="truck" hint={`${s.contractorVisits.filter(v => v.status === 'Gate pass valid' || v.status === 'Scheduled').length} more expected`} onClick={() => go('contractors')} />
       </div>
+      {closing && <CloseIncidentModal id={closing} onClose={() => setClosing(null)} />}
       <div className="grid two">
         <GlassCard title="Open incidents" strong flush>
           {sos.length === 0 && <div className="tbl-empty">No open incidents</div>}
           {sos.map(i => <div key={i.id} className="approval-card" style={{ borderTop: '1px solid var(--line)' }}>
-            <div className="row"><Badge tone={i.kind === 'SOS' ? 'danger' : 'warning'}>{i.kind}</Badge><b>{i.text}</b></div>
+            <div className="row"><Badge tone={i.kind === 'SOS' ? 'danger' : 'warning'}>{i.kind}</Badge><b>{i.text}</b>{(i.escalation ?? 0) > 0 && <Badge tone="danger">Escalated · level {i.escalation}</Badge>}</div>
             <div className="row">{i.ackAt ? <Badge tone="success">Acknowledged</Badge> : <Countdown to={i.at + s.config.sosAckMinutes * 60000} label="to acknowledge" warnBelowMs={120000} />}<span className="spacer" />
               {!i.ackAt && <Button size="sm" variant="primary" onClick={() => act(A.ackIncident(persona, i.id))}>Acknowledge</Button>}
-              {i.ackAt && <Button size="sm" onClick={() => act(A.closeIncident(persona, i.id))}>Close</Button>}</div>
+              {i.ackAt && <Button size="sm" onClick={() => setClosing(i.id)}>Close…</Button>}</div>
           </div>)}
         </GlassCard>
         <GlassCard title="Identity check: today’s arrivals" strong flush>
@@ -269,7 +272,7 @@ function ManagerHome() {
     <>
       <PageHeader display eyebrow={eyebrow(ROLE_LABEL[persona.role], now)} title={`${greeting(now)}, ${firstName(persona.name)}`} summary="Operational summary. No create, edit or approval rights; export only if granted." />
       <div className="grid stats">
-        <StatTile label="Occupancy" value={((p.occ.occupied / p.occ.total) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, (p.occ.occupied / p.occ.total) * 100]} />
+        <StatTile label="Occupancy" value={((p.occ.occupied / p.occ.total) * 100).toFixed(1)} unit="%" icon="bed" hint={`${p.occ.occupied} of ${p.occ.total} active beds`} />
         <StatTile label="Vacant and ready" value={p.beds.filter(b => b.state === 'Available').length} icon="bed" />
         <StatTile label="Waitlist" value={s.waitlist.filter(w => w.status !== 'Closed').length} icon="hourglass" />
         <StatTile label="Overdue stays" value={p.overdue.length} icon="clock" goodUp={false} />

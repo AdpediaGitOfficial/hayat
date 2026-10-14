@@ -9,6 +9,8 @@ export const DEFAULT_CONFIG: Config = {
   // GH-03 is OPEN: placeholder eligibility rules, configurable under Configuration. Never hardcoded in logic.
   minGradeBySite: { MA: 4 },
   priorityCategories: ['Standard', 'Priority (placeholder, GH-04)'],
+  sosEscalationMinutes: 10, notificationDedupeMinutes: 60, emailBackoffMinutes: [1, 5, 30, 120], emailDeliveredAfterSeconds: 60,
+  visitorHours: { open: '08:00', close: '22:00' }, visitorOvernight: false, residentVisitorRequests: false,
 }
 
 function rng(seed: number) {
@@ -84,7 +86,7 @@ export function buildSeed(): State {
   mk('E9003', 'Suresh Menon', 'Male', 'Accommodation', 7); mk('E9004', 'Naveen Kapoor', 'Male', 'Accommodation', 6)
   mk('E9005', 'Vikram Shah', 'Male', 'IT', 6); mk('E9006', 'Meera Pillai', 'Female', 'Engineering', 5)
   mk('E9007', 'Arjun Nair', 'Male', 'Engineering', 3); mk('E9008', 'Sanjay Kumar', 'Male', 'Security', 3)
-  mk('E9009', 'Deepa Iyer', 'Female', 'Operations', 6); mk('E9010', 'Farhan Ali', 'Male', 'Internal audit', 6); mk('E9011', 'Kavita Nair', 'Female', 'Accommodation', 5)
+  mk('E9009', 'Deepa Iyer', 'Female', 'Operations', 6); mk('E9010', 'Farhan Ali', 'Male', 'Internal audit', 6); mk('E9011', 'Kavita Nair', 'Female', 'Accommodation', 5); mk('E9012', 'Meghna Rao', 'Female', 'IT', 6)
   // scenario residents
   const rahul = mk('E1007', 'Rahul Menon', 'Male', 'Front office', 3)
   const ayesha = mk('E1012', 'Ayesha Khan', 'Female', 'Culinary', 3)
@@ -103,6 +105,8 @@ export function buildSeed(): State {
   const imran = mk('E1070', 'Imran Sheikh', 'Male', 'Security', 2)
   const farah = mk('E1080', 'Farah Siddiqui', 'Female', 'Front office', 3)
   const mgrRes = mk('E1090', 'Zoya Bhatt', 'Female', 'Finance', 5)
+  ;[rahul, ayesha, priya, tom, lakshmi, meena, imran].forEach(x => { x.hasPhoto = true })
+  ;[rahul, ayesha, joseph, priya, kiran, neha, omar, tom, dev, meena, farah].forEach(x => { x.email = `${x.name.split(' ')[0].toLowerCase()}@example.com` })   // others have no email: reached in-app and by Reception   // photos are optional (G-05); Joseph has none
 
   const stays: Stay[] = []
   const reservations: Reservation[] = []
@@ -208,6 +212,25 @@ export function buildSeed(): State {
     { id: id('WO'), bedId: blk.id, title: 'Ceiling leak, Villa 03 Room 3', status: 'In progress' as const, assignee: 'CoolAir Services', createdAt: now - 9 * DAY },
     { id: id('WO'), bedId: um.id, title: 'Replace AC compressor', status: 'Open' as const, createdAt: now - 2 * DAY },
     { id: id('WO'), bedId: bedByCode('PV-V02-R2-A').id, title: 'Shower mixer dripping', status: 'Resolved' as const, assignee: 'E9007', createdAt: now - 3 * DAY, resolvedBy: 'E9007' },
+    { id: id('WO'), bedId: bedByCode('PV-V07-R2-A').id, title: 'Rewire corridor lights, Villa 07', status: 'In progress' as const, assignee: 'BrightSpark Electrical', createdAt: now - 4 * DAY },
+  ]
+  const leakWo = workOrders[0], wiringWo = workOrders[3]
+  const vendors = [{ id: 'V1', name: 'CoolAir Services' }, { id: 'V2', name: 'BrightSpark Electrical' }]
+  const contracts = [
+    { id: 'CT1', vendorId: 'V1', from: '2026-01-01', to: '2027-01-01', status: 'Active' as const, docsValidUntil: '2026-12-31' },
+    { id: 'CT2', vendorId: 'V2', from: '2026-03-01', to: '2027-03-01', status: 'Active' as const, docsValidUntil: '2026-10-01' },   // worker documents expired
+  ]
+  const at = (h: number, m = 0) => Date.UTC(2026, 9, 14, h, m)
+  const contractorVisits = [
+    { id: 'CV1', vendorId: 'V1', workOrderId: leakWo.id, siteId: 'PV', from: at(9), to: at(17), workers: ['Imran K.', 'Salim R.'], escort: 'Sanjay Kumar', status: 'Checked in' as const, checkedInAt: at(9, 5) },
+    { id: 'CV2', vendorId: 'V2', workOrderId: wiringWo.id, siteId: 'PV', from: at(13), to: at(16), workers: ['Dinesh P.'], status: 'Scheduled' as const },
+    { id: 'CV3', vendorId: 'V1', workOrderId: leakWo.id, siteId: 'PV', from: at(9) + DAY, to: at(17) + DAY, workers: ['Imran K.'], escort: 'Sanjay Kumar', status: 'Scheduled' as const },
+  ]
+  const visitors = [
+    { id: 'VS1', name: 'Fatima Hussain', hostStaffId: rahul.id, purpose: 'Family visit', siteId: 'PV', from: at(15), to: at(18), status: 'Pre-registered' as const, requiresApproval: true, createdBy: 'E1007' },
+    { id: 'VS2', name: 'Ali Reza', hostStaffId: tom.id, purpose: 'Collect documents', siteId: 'PV', from: at(10), to: at(12), status: 'Approved' as const, requiresApproval: true, approvedBy: 'Rohan Das', createdBy: 'E9002' },
+    { id: 'VS3', name: 'Courier (Aramex)', hostStaffId: lakshmi.id, purpose: 'Parcel delivery', siteId: 'LV', from: at(9, 30), to: at(10), status: 'Walk-in pending' as const, requiresApproval: false, createdBy: 'E9008' },
+    { id: 'VS4', name: 'Sana Malik', hostStaffId: meena.id, purpose: 'Friend visit', siteId: 'PV', from: at(7), to: at(9), status: 'Checked in' as const, requiresApproval: false, checkedInAt: at(7, 10), createdBy: 'E9008' },
   ]
   const keys = stays.filter(s => s.status === 'Active').map(s => ({ id: id('K'), bedId: s.bedId, staffId: s.staffId, kind: 'Room key' as const, status: 'Issued' as const, at: now - 30 * DAY }))
   keys.find(k => k.staffId === sunil.id)!.status = 'Issued'
@@ -219,7 +242,8 @@ export function buildSeed(): State {
       { id: 'N1', at: now - 28 * HOUR, toStaffId: omar.id, text: 'A bed is offered to you (PV-V04-R3-C). Accept or decline within 48 hours.', email: true },
     ],
     audit: [{ id: 'A0', at: now - 40 * DAY, actor: 'System', action: 'Seed', detail: 'Prototype dataset loaded (dummy data, D-100)' }],
-    migration: undefined, delegations: [], incidents: [
+    migration: undefined, delegations: [], visitors, vendors, contracts, contractorVisits, outage: undefined, offlineEvents: [],
+    changes: [], overrides: {}, accounts: {}, exports: [], emailProviderUp: true, incidents: [
       { id: id('I'), kind: 'Incident', bedId: bedByCode('PV-V02-R2-A').id, text: 'Loud noise reported after midnight', at: now - 2 * DAY, ackAt: now - 2 * DAY + 600000, ackBy: 'E9008', closed: true },
     ], workOrders,
   }

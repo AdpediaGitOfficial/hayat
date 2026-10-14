@@ -76,6 +76,7 @@ export function ApprovalCard({ item: i, onOpen }: { item: ApprovalItem; onOpen: 
               {i.kind === 'Emergency' && <><Button variant="primary" onClick={() => act(A.decideEmergency(persona, i.ref, true, ''))}>Approve provisional stay</Button><Button variant="danger" onClick={() => { if (!showReject) setShowReject(true); else act(A.decideEmergency(persona, i.ref, false, reason)) }}>{showReject ? 'Confirm reject' : 'Reject'}</Button></>}
               {i.kind === 'Migration' && <Button variant="primary" onClick={() => act(A.signOffMigration(persona))}>Sign off and import</Button>}
               {i.kind === 'Work order' && <Button variant="primary" onClick={() => act(A.advanceWorkOrder(persona, i.ref, 'Verified'))}>Verify work</Button>}
+              {i.kind === 'Permission' && <><Button variant="primary" onClick={() => act(A.decidePermissionChange(persona, i.ref, true, ''))}>Approve change</Button><Button variant="danger" onClick={() => { if (!showReject) setShowReject(true); else act(A.decidePermissionChange(persona, i.ref, false, reason)) }}>{showReject ? 'Confirm reject' : 'Reject'}</Button></>}
             </div>
           </div>
         )}
@@ -102,6 +103,7 @@ export function RequestDrawer({ reqId, onClose }: { reqId: string; onClose: () =
     <Drawer open onClose={onClose} title={`Allocate: ${staff.name}`} subtitle={`${q.stayType} · ${fmtDate(q.arrival)} → ${fmtDate(q.end)}`}
       footer={<>
         <Button onClick={() => act(A.waitlistRequest(persona, q.id), onClose)}>No bed: waitlist</Button>
+        <Button onClick={() => act(A.requestChanges(persona, q.id, reason), onClose)}>Ask for changes</Button>
         <Button variant="danger" onClick={() => reason.trim() ? act(A.rejectRequest(persona, q.id, reason), onClose) : act({ ok: false, reason: 'Enter a reason to reject', owner: 'You' })}>Reject</Button>
         <Button variant="primary" disabled={!bedId} onClick={() => act(A.approveRequest(persona, q.id, bedId, { exceptionReason: exc || undefined }), onClose)}>Approve and reserve</Button>
       </>}>
@@ -119,7 +121,7 @@ export function RequestDrawer({ reqId, onClose }: { reqId: string; onClose: () =
       <Field label="Or choose any bed by code" hint="Checked for eligibility and conflicts when you confirm"><Select value={bedId} onChange={e => setBedId(e.target.value)}><option value="">Select…</option>{s.beds.filter(b => b.state !== 'Archived').map(b => <option key={b.id} value={b.id}>{b.code}</option>)}</Select></Field>
       {pick && el && !el.ok && <Blocked why={el.reasons.join('; ')} owner="Policy Approver" next="Add an exception reason (Policy Approver only), or pick another bed" />}
       {pick && el && !el.ok && <Field label="Eligibility exception reason" hint={isPA(persona) ? 'Recorded with your name and reported' : 'Only a Policy Approver can grant this'}><Textarea value={exc} onChange={e => setExc(e.target.value)} /></Field>}
-      <Field label="Reason (only needed to reject)" optional><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>
+      <Field label="Reason or note to the requester" hint="Required to reject, or to send the request back for changes" optional><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>
     </Drawer>
   )
 }
@@ -127,7 +129,8 @@ export function RequestDrawer({ reqId, onClose }: { reqId: string; onClose: () =
 function DelegationCard() {
   const { s, persona, now } = useCtx()
   const act = useAct()
-  const approvers = PERSONAS.filter(p => p.id !== persona.id && (p.role === 'AA' || isPA(p)))
+  // any internal operator can cover; contractors, auditors and read-only managers cannot hold delegated authority
+  const approvers = PERSONAS.filter(p => p.id !== persona.id && !['Vend', 'Aud', 'Mgr', 'Tech', 'Sec', 'Res'].includes(p.role))
   const [to, setTo] = useState(approvers[0]?.name ?? '')
   const T = today(now)
   const [from, setFrom] = useState(T), [until, setUntil] = useState(addDays(T, 7))

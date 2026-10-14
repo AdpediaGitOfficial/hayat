@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AppCtx } from './ctx'
 import { A, resetState, useAppState } from './domain/store'
 import { PERSONAS, ROLE_LABEL, CAP_LABEL, navFor } from './roles'
-import { Avatar, Badge, Button, Icon, ToastHost, GlassCard } from './ui'
-import { jump, nowMs, useNow, fmtDateTime, DAY, HOUR } from './domain/time'
+import { Alert, Avatar, Badge, Button, Icon, ToastHost, GlassCard } from './ui'
+import { jump, nowMs, useNow, fmtDate, fmtDateTime, DAY, HOUR } from './domain/time'
 import { approvalInbox, myInbox, notificationsFor, visibleSites } from './domain/select'
 import { Dashboard } from './screens/Dashboard'
 import { Inventory } from './screens/Inventory'
@@ -19,6 +19,12 @@ import { Emergency } from './screens/Emergency'
 import { Staff } from './screens/Staff'
 import { RequestBed } from './screens/RequestBed'
 import { Keys, Maintenance, Incidents, Reports, AuditLog, Settings } from './screens/Misc'
+import { Visitors } from './screens/Visitors'
+import { Contractors } from './screens/Contractors'
+import { Outage } from './screens/Outage'
+import { Users, NotificationLog } from './screens/Admin'
+import { DemoGuide } from './screens/DemoGuide'
+import { actingAs } from './domain/rules'
 
 export default function App() {
   const s = useAppState()
@@ -35,8 +41,10 @@ export default function App() {
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   useEffect(() => { const t = setInterval(() => A.tick(), 2000); A.tick(); return () => clearInterval(t) }, [])
 
-  const persona = PERSONAS.find(p => p.id === route.pid) ?? PERSONAS[0]
-  const nav = useMemo(() => navFor(persona), [persona])
+  const basePersona = PERSONAS.find(p => p.id === route.pid) ?? PERSONAS[0]
+  // the persona as the server would see it now: approved grants, delegated authority, revoked login
+  const persona = actingAs(s, basePersona, now)
+  const nav = navFor(persona)
   const go = (page: string, params: Record<string, string> = {}) => {
     const q = new URLSearchParams(params).toString()
     router.push(`/${persona.id}/${page}${q ? '?' + q : ''}`)
@@ -54,7 +62,11 @@ export default function App() {
     waitlist: s.offers.filter(o => o.status === 'Pending' && !o.deliveredAt).length,
     housekeeping: persona.role === 'Res' ? s.cleaning.filter(t => t.status === 'Open' && t.assignedTo === persona.staffId).length : s.cleaning.filter(t => t.status !== 'Passed').length,
     emergency: s.emergencies.filter(e => e.status === 'Pending').length,
+    visitors: s.visitors.filter(v => ['Pre-registered', 'Walk-in pending'].includes(v.status)).length,
+    notifications: s.notifications.filter(n => n.emailStatus === 'failed').length,
   }
+  const critical = s.notifications.filter(n => n.emailStatus === 'failed' && n.critical).length
+  const delegations = s.delegations.filter(d => d.to === basePersona.name)
   const ctx = { persona, s, now, page, params: route.params, go, scope, setScope }
   const groups = nav.reduce<Record<string, typeof nav>>((m, n) => { (m[n.group] ||= []).push(n); return m }, {})
   const Page = PAGES[page] ?? Dashboard
@@ -116,7 +128,11 @@ export default function App() {
                 </div>
               </header>
               {menu === 'persona' && <PersonaMenu current={persona.id} onPick={switchPersona} onClose={() => setMenu(null)} />}
-              <main className="page" id="main"><Page key={persona.id + page} /></main>
+              <main className="page" id="main">
+                {persona.delegatedFrom && persona.delegatedFrom.length > 0 && <Alert tone="info" title={`Acting for ${persona.delegatedFrom.join(', ')}`} detail={`Out-of-office delegation until ${delegations.map(d => fmtDate(d.toDate)).join(', ')}. Separation of duties still applies to you.`} />}
+                {critical > 0 && ['AA', 'SA'].includes(persona.role) && <Alert tone="danger" title={`${critical} critical alert${critical > 1 ? 's' : ''} could not be emailed`} detail="Follow up in person, or retry once the provider is back." action={<Button size="sm" onClick={() => go('notifications')}>Open log</Button>} />}
+                {persona.revoked ? <RevokedScreen name={persona.name} onSwitch={() => setMenu('persona')} /> : <Page key={basePersona.id + page} />}
+              </main>
             </div>
           </div>
 
@@ -124,7 +140,8 @@ export default function App() {
             {nav.slice(0, 5).map(n => <button key={n.id} className={page === n.id ? 'active' : ''} onClick={() => go(n.id)}><Icon name={n.icon} size={20} />{n.label.split(' ')[0]}</button>)}
             <button onClick={() => setMenu('persona')}><Icon name="user" size={20} />Role</button>
           </nav>
-          <DemoBar now={now} />
+          <DemoGuide s={s} go={(pid, pg, params) => { const q = new URLSearchParams(params ?? {}).toString(); router.push(`/${pid}/${pg}${q ? '?' + q : ''}`) }} />
+          <DemoBar now={now} emailUp={s.emailProviderUp} />
         </div>
       </AppCtx.Provider>
     </ToastHost>
@@ -134,6 +151,7 @@ export default function App() {
 const PAGES: Record<string, () => JSX.Element> = {
   dashboard: Dashboard, inventory: Inventory, approvals: Approvals, allocations: Allocations, waitlist: Waitlist, transfers: Transfers,
   exits: Exits, clearances: Clearances, housekeeping: Housekeeping, emergency: Emergency, staff: Staff, request: RequestBed,
+  visitors: Visitors, contractors: Contractors, outage: Outage, users: Users, notifications: NotificationLog,
   keys: Keys, maintenance: Maintenance, incidents: Incidents, reports: Reports, audit: AuditLog, settings: Settings,
 }
 
@@ -164,7 +182,7 @@ function PersonaMenu({ current, onPick, onClose }: { current: string; onPick: (i
   )
 }
 
-function DemoBar({ now }: { now: number }) {
+function DemoBar({ now, emailUp }: { now: number; emailUp: boolean }) {
   return (
     <div className="demo-bar" role="region" aria-label="Demo controls">
       <Icon name="clock" /><span className="clock">{fmtDateTime(now)}</span>
@@ -173,7 +191,17 @@ function DemoBar({ now }: { now: number }) {
       <Button size="sm" onClick={() => jump(6 * HOUR)}>+6h</Button>
       <Button size="sm" onClick={() => jump(DAY)}>+1 day</Button>
       <Button size="sm" onClick={() => jump(3 * DAY)}>+3 days</Button>
+      <Button size="sm" variant={emailUp ? 'ghost' : 'danger'} icon="send" onClick={() => A.setEmailProvider(!emailUp)}>{emailUp ? 'Email up' : 'Email down'}</Button>
       <Button size="sm" variant="ghost" icon="undo" onClick={() => { resetState(); }}>Reset data</Button>
     </div>
+  )
+}
+
+function RevokedScreen({ name, onSwitch }: { name: string; onSwitch: () => void }) {
+  return (
+    <GlassCard strong title="Your access has been revoked" subtitle={`${name}'s login was deactivated, so every session ended immediately. Nothing here can be opened.`}>
+      <p className="muted" style={{ marginBottom: 12 }}>This happens when employment is marked as Left or an administrator deactivates the account. Records and history are kept for authorised staff.</p>
+      <Button onClick={onSwitch}>Switch role</Button>
+    </GlassCard>
   )
 }

@@ -6,14 +6,14 @@ Next.js 14 (App Router) + React 18 + TypeScript. **Dummy data, in-memory state, 
 cd prototype
 npm install
 npm run dev        # http://localhost:3000, pick a role on the landing page
-npm test           # 32 scenario tests against the real store
+npm test           # 70 scenario tests against the real store
 npm run build
 ```
 
 Design tokens and components follow `docs/design/GrandHyatt-Design-System.html` (red brand `#C42737`, glass cards, solid ink sidebar, Jost + Inter, Lucide icons, light and dark).
 
 ## Try it
-Switch role from the sidebar (top-left or the user footer). The **demo clock** at the bottom jumps time forward; **Reset data** restores the seed and the clock.
+Open the **Demo guide** (bottom right) for a 15-step walk through every flow, with ticks that come from the data. Switch role from the sidebar (top-left or the user footer). The **demo clock** at the bottom jumps time forward; **Reset data** restores the seed and the clock.
 
 | Flow | Role | Where | What to try |
 |---|---|---|---|
@@ -26,6 +26,11 @@ Switch role from the sidebar (top-left or the user footer). The **demo clock** a
 | 7 Exit → bed turnover | Anita, Rohan, Lakshmi | Joiners and exits, Clearances, Housekeeping | Mark Dev Malhotra as Left (login revoked, bed still Occupied), check out, clean (Lakshmi), inspect (Rohan). Bed is never Available before that. Suresh can waive clearance items. |
 | 8 Emergency check-in | Rohan, Anita, Suresh | Emergency check-in | Jump +1 day twice and watch reminders then escalation. It never auto-approves. |
 | 9 Onboarding and migration | Anita, Suresh | Staff directory | Add staff (duplicate ID rejected), CSV preview with the sample, Import Current Occupancy (maker-checker). |
+| 10 Delegation, grants | Anita, Vikram, Meghna | Approvals (Out of office); Users and access | Anita names Rohan as delegate: he sees her approvals while she is away, with a banner. Vikram requests a capability grant; it only applies once Meghna approves. |
+| 11 Notifications | Anita | Notification log; demo bar "Email up/down" | Switch the email provider off, make an offer, jump time: retries, then a visible failure, and the offer clock never starts. |
+| 12 Visitors and contractors | Rohan, Sanjay, Meera | Visitors; Contractors | Register, approve, gate in/out. CoolAir is admitted; BrightSpark is stopped by expired documents. |
+| 13 SOS and outage | Resident, Sanjay, Rohan, Anita | Incidents; Outage mode | Leave an SOS unacknowledged and jump +6 min to see escalation. Declare an outage, log events, restore, reconcile. |
+| 14 Rehire, structures | Anita, Suresh | Staff directory; Sites and rooms | Rehire a former employee on the same profile. Block or archive a room and watch the dependency checks. |
 
 ## Layout
 ```

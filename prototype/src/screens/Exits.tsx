@@ -30,8 +30,8 @@ export function Exits() {
       {tab === 'checkout' && <DataTable rowKey={x => x.id} rows={queue} empty="No checkouts waiting" cols={[
         { key: 'n', header: 'Resident', render: x => { const st = staffById(s, x.staffId)!; return <Person name={st.name} sub={st.dept} /> } },
         { key: 'b', header: 'Bed', render: x => <span className="mono">{bedById(s, x.bedId)?.code}</span> },
-        { key: 'w', header: 'Why', render: x => x.exitPending ? <Badge tone="neutral">Left organisation</Badge> : x.checkoutRequested ? <Badge tone="warning">Voluntary: no approval needed</Badge> : <Badge tone="warning">Planned end today</Badge> },
-        { key: 'a', header: '', align: 'r', render: x => can(persona, 'checkout.execute') ? <Button size="sm" variant="primary" onClick={() => setOutFor(x.id)}>Process checkout</Button> : null },
+        { key: 'w', header: 'Why', render: x => x.exitPending ? <Badge tone="neutral">Left organisation</Badge> : x.checkoutRequested ? <Badge tone="warning">{x.checkoutAckAt ? 'Voluntary · acknowledged' : 'Voluntary: acknowledge within 1 business day'}</Badge> : <Badge tone="warning">Planned end today</Badge> },
+        { key: 'a', header: '', align: 'r', render: x => can(persona, 'checkout.execute') ? <div className="row" style={{ justifyContent: 'flex-end' }}>{x.checkoutRequested && !x.checkoutAckAt && <Button size="sm" onClick={() => act(A.acknowledgeCheckout(persona, x.id))}>Acknowledge</Button>}<Button size="sm" variant="primary" onClick={() => setOutFor(x.id)}>Process checkout</Button></div> : null },
       ]} />}
       {tab === 'joiners' && <DataTable rowKey={x => x.id} rows={joiners} empty="No joiners waiting" cols={[
         { key: 'n', header: 'Staff', render: x => <Person name={x.name} sub={`${x.id} · ${x.dept}`} /> },

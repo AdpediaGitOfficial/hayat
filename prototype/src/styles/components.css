@@ -176,3 +176,14 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 
 .tbl td:first-child,.tbl th:first-child{padding-left:20px}
 .tbl td:last-child,.tbl th:last-child{padding-right:20px}
+/* Demo guide */
+.guide-min{position:fixed;right:16px;bottom:70px;z-index:45;box-shadow:var(--shadow-raised)}
+.guide{position:fixed;right:16px;bottom:70px;z-index:45;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;box-shadow:var(--shadow-raised)}
+.guide-list{list-style:none;margin:0;padding:0 8px 10px;display:flex;flex-direction:column}
+.guide-list li{display:flex;gap:10px;align-items:center;padding:8px 6px;border-top:1px solid var(--line);font-size:12.5px;line-height:17px}
+.guide-list li .t{flex:1}
+.guide-list .tick{width:20px;height:20px;border-radius:50%;border:1px solid var(--border);display:grid;place-items:center;font-size:11px;flex:none}
+.guide-list li.done .tick{background:var(--success-soft);color:var(--success);border-color:transparent}
+.guide-list li.done .t{color:var(--ink-subtle);text-decoration:line-through}
+.guide-list li.next .tick{background:var(--brand-fill);color:#fff;border-color:transparent}
+@media (max-width:900px){.guide-min,.guide{bottom:120px}}

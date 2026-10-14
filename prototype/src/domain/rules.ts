@@ -1,5 +1,6 @@
-import type { Bed, Building, Config, Fail, Persona, Reservation, Room, Site, State, Staff, Stay } from './types'
-import { businessDaysBetween, addDays, DAY } from './time'
+import type { Bed, Building, Config, Fail, Persona, Reservation, Role, Room, Site, State, Staff, Stay } from './types'
+import { businessDaysBetween, addDays, dateStr, DAY } from './time'
+import { PERSONAS } from '../roles'
 
 /* ---------------- lookups ---------------- */
 export const staffById = (s: State, id?: string) => s.staff.find(x => x.id === id)
@@ -25,26 +26,61 @@ export type Perm =
   | 'exit.markLeft' | 'clearance.task' | 'clearance.waive' | 'housekeeping.assign' | 'housekeeping.clean' | 'inspect.final'
   | 'emergency.initiate' | 'emergency.approve' | 'emergency.backup' | 'emergency.policy' | 'staff.manage' | 'migration.prepare' | 'migration.signoff'
   | 'key.manage' | 'incident.ack' | 'sos.raise' | 'workorder.create' | 'workorder.manage' | 'workorder.work' | 'workorder.verify' | 'config.edit' | 'delegate.set'
+  | 'visitor.register' | 'visitor.approve' | 'visitor.gate' | 'contractor.manage' | 'contractor.gate' | 'outage.declare' | 'outage.export' | 'outage.reconcile'
+  | 'rehire' | 'permission.request' | 'permission.decide' | 'account.reset.staff' | 'account.reset.admin' | 'structure.archive' | 'structure.block' | 'report.export' | 'notification.retry'
 
 const ROLE_PERMS: Record<string, Perm[]> = {
-  SA: ['bed.manage', 'bed.block', 'building.create', 'site.create', 'staff.manage', 'migration.signoff', 'config.edit', 'emergency.policy', 'delegate.set'],
+  SA: ['bed.manage', 'bed.block', 'building.create', 'site.create', 'staff.manage', 'migration.signoff', 'config.edit', 'emergency.policy', 'delegate.set',
+    'permission.request', 'permission.decide', 'account.reset.admin', 'account.reset.staff', 'structure.archive', 'structure.block', 'report.export', 'notification.retry', 'contractor.manage'],
   AA: ['request.submit', 'request.approve', 'allocate.bulk', 'checkin.execute', 'checkout.execute', 'bed.manage', 'bed.block', 'offer.manage', 'waitlist.manage',
     'transfer.request', 'transfer.approve', 'transfer.execute', 'extension.request', 'extension.approve', 'exit.markLeft', 'clearance.task', 'housekeeping.assign',
-    'emergency.approve', 'staff.manage', 'migration.prepare', 'key.manage', 'workorder.create', 'delegate.set'],
-  Rec: ['request.submit', 'checkin.execute', 'checkout.execute', 'offer.manage', 'transfer.execute', 'clearance.task', 'housekeeping.assign', 'key.manage', 'workorder.create'],
+    'emergency.approve', 'staff.manage', 'migration.prepare', 'key.manage', 'workorder.create', 'delegate.set',
+    'visitor.register', 'visitor.approve', 'contractor.manage', 'outage.declare', 'outage.reconcile', 'rehire', 'account.reset.staff', 'structure.archive', 'structure.block', 'report.export', 'notification.retry'],
+  Rec: ['request.submit', 'checkin.execute', 'checkout.execute', 'offer.manage', 'transfer.execute', 'clearance.task', 'housekeeping.assign', 'key.manage', 'workorder.create',
+    'visitor.register', 'visitor.approve'],
   Res: ['request.submit', 'checkout.request', 'offer.respond', 'transfer.request', 'extension.request', 'sos.raise', 'workorder.create'],
-  MC: ['bed.block', 'clearance.task', 'workorder.manage', 'workorder.verify', 'workorder.create'],
+  MC: ['bed.block', 'clearance.task', 'workorder.manage', 'workorder.verify', 'workorder.create', 'contractor.manage'],
   Tech: ['workorder.work'], Vend: ['workorder.work'],
-  Sec: ['incident.ack', 'sos.raise'], Mgr: [], Aud: [],
+  Sec: ['incident.ack', 'sos.raise', 'visitor.gate', 'contractor.gate'], Mgr: [], Aud: [],
 }
 const CAP_PERMS: Record<string, Perm[]> = {
   Housekeeping: ['housekeeping.clean'], FinalInspection: ['inspect.final'], EmergencyCheckin: ['emergency.initiate'], BuildingCreation: ['building.create'],
   NightKeys: ['key.manage'], BackupApprover: ['emergency.backup', 'workorder.verify'], StaffMaster: ['staff.manage'],
   PolicyApprover: ['request.exception', 'waitlist.exception', 'extension.beyond', 'clearance.waive', 'migration.signoff', 'emergency.policy', 'emergency.backup'],
-  OutageExport: [],
+  OutageExport: ['outage.export'], ReportExport: ['report.export'],
 }
 export function can(p: Persona, perm: Perm) {
-  return ROLE_PERMS[p.role]?.includes(perm) || p.caps.some(c => CAP_PERMS[c]?.includes(perm)) || false
+  if (p.revoked) return false   // Mark as Left or deactivation revokes the login immediately
+  return ROLE_PERMS[p.role]?.includes(perm) || (p.extraRoles ?? []).some(r => ROLE_PERMS[r]?.includes(perm)) || p.caps.some(c => CAP_PERMS[c]?.includes(perm)) || false
+}
+export const hasRole = (p: Persona, r: Role) => !p.revoked && (p.role === r || (p.extraRoles ?? []).includes(r))
+
+/** The persona as the server would see it right now: approved capability grants and role/scope changes applied,
+    delegated authority from out-of-office approvers added (separation of duties still applies to the delegate), and login revoked if the account or the person has been deactivated. */
+export function actingAs(s: State, base: Persona, now: number): Persona {
+  const T = dateStr(now)
+  const effective = (p: Persona): Persona => {
+    const o = s.overrides[p.id]
+    const caps = p.caps.filter(c => !o?.removeCaps.includes(c))
+    o?.addCaps.forEach(g => { if ((!g.expires || g.expires >= T) && !caps.includes(g.cap)) caps.push(g.cap) })
+    return { ...p, role: o?.role ?? p.role, caps, sites: o?.sites ?? p.sites }
+  }
+  const me = effective(base)
+  const extraRoles: Role[] = [], delegatedFrom: string[] = []
+  let sites = me.sites
+  for (const d of s.delegations) {
+    if (d.to !== base.name || d.fromDate > T || d.toDate < T) continue
+    const from = PERSONAS.find(x => x.name === d.from)
+    if (!from) continue
+    const f = effective(from)
+    delegatedFrom.push(f.name)
+    if (f.role !== me.role && !extraRoles.includes(f.role)) extraRoles.push(f.role)
+    f.caps.forEach(c => { if (!me.caps.includes(c)) me.caps.push(c) })
+    sites = sites === 'all' || f.sites === 'all' ? 'all' : Array.from(new Set([...sites, ...f.sites]))
+  }
+  const staff = base.staffId ? s.staff.find(x => x.id === base.staffId) : undefined
+  const revoked = (staff && !staff.loginActive) || s.accounts[base.id]?.active === false
+  return { ...me, sites, extraRoles, delegatedFrom, revoked: !!revoked }
 }
 export const inScope = (p: Persona, siteId: string) => p.sites === 'all' || p.sites.includes(siteId)
 export const isPA = (p: Persona) => p.caps.includes('PolicyApprover')
@@ -87,9 +123,16 @@ export function bedConflict(s: State, bedId: string, w: Window, ignore: { reserv
   if (st) return { kind: 'stay' as const, stay: st, who: staffById(s, st.staffId)?.name ?? 'someone' }
   const rs = s.reservations.find(x => x.bedId === bedId && x.status === 'Reserved' && x.id !== ignore.reservationId && overlaps(w, { from: x.from, to: x.to }))
   if (rs) return { kind: 'reservation' as const, reservation: rs, who: staffById(s, rs.staffId)?.name ?? 'someone' }
+  // date-ranged blocks (repair, safety, …) keep a bed out of use for the dates they cover
+  const blk = (s.beds.find(b => b.id === bedId)?.blocks ?? []).find(k => overlaps(w, { from: k.from, to: k.to }))
+  if (blk) return { kind: 'block' as const, who: `${blk.reason} (${blk.from} to ${blk.to ?? 'further notice'})` }
   return null
 }
 export function bedAllocatable(s: State, bed: Bed): Fail | null {
+  const room = roomOf(s, bed), bld = buildingOf(s, room)
+  if (room.archived || bld?.archived) return { ok: false, reason: `${room.archived ? room.name : bld!.name} is archived`, owner: 'Accommodation Admin', next: 'Choose a bed in an active room' }
+  const hold = room.blocked ?? bld?.blocked
+  if (hold) return { ok: false, reason: `${room.blocked ? room.name : bld!.name} is blocked: ${hold.reason}`, owner: 'Accommodation Admin', next: 'Unblock it or choose another bed. Existing residents are flagged, never moved automatically' }
   if (bed.heldBy) return { ok: false, reason: `${bed.code} is held by a bed offer`, owner: 'The offered resident', next: 'Wait for the offer to be accepted, declined or expire' }
   if (bed.state === 'Blocked' || bed.state === 'UnderMaintenance' || bed.state === 'Archived')
     return { ok: false, reason: `${bed.code} is ${bed.state === 'Archived' ? 'archived' : bed.state === 'Blocked' ? 'blocked' : 'under maintenance'}${bed.reason ? ': ' + bed.reason : ''}`, owner: 'Maintenance Coordinator', next: 'Unblock the bed or choose another' }

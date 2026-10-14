@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useAct, useCtx } from '../ctx'
 import { A } from '../domain/store'
-import { Alert, Badge, Blocked, Button, DataTable, Field, GlassCard, Icon, Input, PageHeader, Person, Select, Status, Tabs, Textarea } from '../ui'
+import { Alert, Badge, Blocked, Button, Check, DataTable, Field, GlassCard, Icon, Input, Modal, PageHeader, Person, Select, Status, Tabs, Textarea } from '../ui'
 import { activeStayOfStaff, bedById, can } from '../domain/rules'
 import { fmtDate, today } from '../domain/time'
-import type { Gender, MigrationRow, Staff as StaffT } from '../domain/types'
+import type { Gender, MigrationRow } from '../domain/types'
+import { importable, parseStaffCsv, rejectedCsv, type CsvRow } from '../domain/csv'
 
 type Tab = 'directory' | 'add' | 'csv' | 'migration'
 
@@ -28,12 +29,14 @@ export function Staff() {
 function Directory({ initialQ, initialF }: { initialQ: string; initialF: string }) {
   const { s, persona } = useCtx()
   const act = useAct()
+  const [rehire, setRehire] = useState<string | null>(null)
   const [q, setQ] = useState(initialQ)
   const [f, setF] = useState(initialF)
   const full = persona.role !== 'Rec'
   const rows = s.staff.filter(x => (f === 'all' ? !x.archived : f === 'unverified' ? !x.verified && x.status === 'Active' : f === 'left' ? x.status === 'Left' : x.status === 'Active'))
     .filter(x => (x.name + x.id + x.dept).toLowerCase().includes(q.toLowerCase())).slice(0, 40)
-  return (
+  return (<>
+    {rehire && <RehireModal id={rehire} onClose={() => setRehire(null)} />}
     <DataTable rowKey={x => x.id} rows={rows} footer={<span>Showing {rows.length} (first 40). Former staff are archived from default views but stay searchable. Never deleted.</span>}
       toolbar={<><label className="search" style={{ margin: 0, maxWidth: 300 }}><Icon name="search" /><input placeholder="Search name, ID or department" value={q} onChange={e => setQ(e.target.value)} aria-label="Search staff" /></label>
         <Tabs value={f} onChange={setF} options={[{ id: 'all', label: 'All' }, { id: 'active', label: 'Active' }, { id: 'unverified', label: 'Unverified' }, { id: 'left', label: 'Left' }]} /></>}
@@ -43,8 +46,26 @@ function Directory({ initialQ, initialF }: { initialQ: string; initialF: string 
         { key: 'p', header: 'Phone', render: x => <span className="mono">{full ? x.phone : '•••• ' + x.phone.slice(-4)}</span> },
         { key: 'b', header: 'Bed', render: x => { const st = activeStayOfStaff(s, x.id); return st ? <span className="mono">{bedById(s, st.bedId)?.code}</span> : <span className="muted">·</span> } },
         { key: 's', header: 'Status', render: x => x.status === 'Left' ? <Status s="Left" label={`Left ${x.leftEffective ? fmtDate(x.leftEffective) : ''}`} /> : x.verified ? <Status s="Active" /> : <Badge tone="warning">Unverified</Badge> },
-        { key: 'a', header: '', align: 'r', render: x => can(persona, 'staff.manage') && !x.verified && x.status === 'Active' ? <Button size="sm" onClick={() => act(A.verifyStaff(persona, x.id))}>Verify</Button> : null },
+        { key: 'p', header: 'Photo', render: x => x.hasPhoto ? <Badge tone="success" dot={false}>On file</Badge> : <span className="muted">None</span> },
+        { key: 'a', header: '', align: 'r', render: x => can(persona, 'staff.manage') && !x.verified && x.status === 'Active' ? <Button size="sm" onClick={() => act(A.verifyStaff(persona, x.id))}>Verify</Button> : x.status === 'Left' && can(persona, 'rehire') ? <Button size="sm" onClick={() => setRehire(x.id)}>Rehire…</Button> : null },
       ]} />
+  </>)
+}
+
+function RehireModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const { s, persona } = useCtx()
+  const act = useAct()
+  const st = s.staff.find(x => x.id === id)!
+  const [reason, setReason] = useState('Returned to the organisation')
+  const [confirm, setConfirm] = useState(false)
+  const open = s.clearances.find(c => c.staffId === id && c.status === 'Open')
+  return (
+    <Modal open onClose={onClose} title={`Rehire ${st.name}`} subtitle="The same profile is reused. No second profile is ever created."
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={() => act(A.rehire(persona, id, { reason, confirm }), onClose)}>Reactivate</Button></>}>
+      {open && !open.waiver && <Alert tone="warning" title="An old clearance case is still open" detail="Complete it, or ask the Policy Approver to waive it (reason and evidence), before rehiring." />}
+      <Field label="Reason"><Input value={reason} onChange={e => setReason(e.target.value)} /></Field>
+      <Check checked={confirm} onChange={setConfirm}>I confirm with my password</Check>
+    </Modal>
   )
 }
 
@@ -84,34 +105,15 @@ E3005,Rina Das,Female,Laundry,2,+971501110005,,12/13/2026,Active,,
 E3006,Karthik Raja,Male,Engineering,4,+971501110006,,2026-10-13,Active,Meena Raja,+971501110097
 E3006,Karthik Raja,Male,Engineering,4,+971501110006,,2026-10-13,Active,Meena Raja,+971501110097`
 
-type Row = { raw: string[]; status: 'accepted' | 'duplicate' | 'invalid' | 'warning'; why: string; rec?: Omit<StaffT, 'status' | 'loginActive' | 'exceptions' | 'verified' | 'source'> }
-function parse(text: string, existing: string[]): Row[] {
-  const lines = text.split(/\r?\n/).filter(l => l.trim())
-  const seen = new Set(existing.map(x => x.toLowerCase()))
-  return lines.slice(1).map(l => {
-    const c = l.split(',').map(x => x.trim())
-    const [id, name, gender, dept, grade, phone, email, joining, , ecn, ecp] = c
-    const bad = c.find(x => /^[=+\-@]/.test(x) && !/^\+\d+$/.test(x))
-    if (bad) return { raw: c, status: 'invalid', why: `Formula injection guard: “${bad.slice(0, 16)}…” starts with =, +, - or @` }
-    if (!id || !name) return { raw: c, status: 'invalid', why: 'Employee ID and full name are required' }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(joining ?? '')) return { raw: c, status: 'invalid', why: `Joining date “${joining}” is not a valid date (use YYYY-MM-DD)` }
-    if (seen.has(id.toLowerCase())) return { raw: c, status: 'duplicate', why: `Employee ID ${id} already exists. Never auto-merged` }
-    seen.add(id.toLowerCase())
-    const rec = { id, name, gender: (gender === 'Female' ? 'Female' : 'Male') as Gender, dept, grade: +grade || 1, phone, email: email || undefined, emergencyContact: ecn ? `${ecn} · ${ecp}` : '', joining }
-    return { raw: c, status: !ecn ? 'warning' : 'accepted', why: !ecn ? 'No emergency contact (confirm whether required)' : 'OK', rec }
-  })
-}
-
 function CsvImport() {
   const { s, persona } = useCtx()
   const act = useAct()
   const [text, setText] = useState('')
-  const rows = useMemo(() => text ? parse(text, s.staff.map(x => x.id)) : [], [text, s.staff])
-  const count = (k: Row['status']) => rows.filter(r => r.status === k).length
-  const good = rows.filter(r => r.status === 'accepted' || r.status === 'warning')
+  const rows = useMemo(() => text ? parseStaffCsv(text, s.staff.map(x => x.id)) : [], [text, s.staff])
+  const count = (k: CsvRow['status']) => rows.filter(r => r.status === k).length
+  const good = importable(rows)
   const downloadRejected = () => {
-    const rej = rows.filter(r => r.status === 'invalid' || r.status === 'duplicate')
-    const blob = new Blob(['row,reason\n' + rej.map(r => `"${r.raw.join(' | ').replace(/"/g, "'")}","${r.why}"`).join('\n')], { type: 'text/csv' })
+    const blob = new Blob([rejectedCsv(rows)], { type: 'text/csv' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rejected-rows.csv'; a.click()
   }
   return (
@@ -123,7 +125,7 @@ function CsvImport() {
         <div className="grid stats"><div className="card stat"><span className="lbl">Accepted</span><span className="kpi">{count('accepted')}</span></div><div className="card stat"><span className="lbl">Warnings</span><span className="kpi">{count('warning')}</span></div><div className="card stat"><span className="lbl">Duplicates</span><span className="kpi">{count('duplicate')}</span></div><div className="card stat"><span className="lbl">Invalid</span><span className="kpi">{count('invalid')}</span></div></div>
         <GlassCard strong flush>
           <table className="tbl"><thead><tr><th>Row</th><th>Employee ID</th><th>Name</th><th>Result</th><th>Why</th></tr></thead><tbody>
-            {rows.map((r, i) => <tr key={i}><td className="tnum">{i + 2}</td><td className="mono">{r.raw[0]}</td><td>{r.raw[1]}</td><td><Badge tone={r.status === 'accepted' ? 'success' : r.status === 'warning' ? 'warning' : r.status === 'duplicate' ? 'neutral' : 'danger'}>{r.status}</Badge></td><td className="muted body-sm">{r.why}</td></tr>)}
+            {rows.map((r, i) => <tr key={i}><td className="tnum">{r.line}</td><td className="mono">{r.raw[0]}</td><td>{r.raw[1]}</td><td><Badge tone={r.status === 'accepted' ? 'success' : r.status === 'warning' ? 'warning' : r.status === 'duplicate' ? 'neutral' : 'danger'}>{r.status}</Badge></td><td className="muted body-sm">{r.why}</td></tr>)}
           </tbody></table>
         </GlassCard>
         <div className="row"><Button variant="primary" disabled={good.length === 0} onClick={() => act(A.commitStaffCsv(persona, good.map(r => r.rec!)), () => setText(''))}>Import {good.length} rows</Button><Button onClick={downloadRejected} disabled={count('invalid') + count('duplicate') === 0}>Download rejected rows</Button></div>

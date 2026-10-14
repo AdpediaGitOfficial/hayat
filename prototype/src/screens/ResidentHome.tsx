@@ -34,7 +34,9 @@ export function ResidentHome() {
         </GlassCard>
       )}
 
-      {st.status === 'applied' && st.req && (
+      {st.status === 'applied' && st.req?.status === 'ChangesRequested' && <ChangesCard reqId={st.req.id} />}
+
+      {st.status === 'applied' && st.req && st.req.status === 'Submitted' && (
         <GlassCard title="Request received" subtitle="An Accommodation Admin decides within 2 business days" actions={<Status s="Submitted" label="Waiting for approval" />}>
           <dl className="kv"><dt>Arrival</dt><dd>{fmtDate(st.req.arrival)}</dd><dt>Planned end</dt><dd>{fmtDate(st.req.end)}</dd><dt>Stay type</dt><dd>{st.req.stayType}</dd><dt>Submitted</dt><dd>{fmtDateTime(st.req.createdAt)}</dd></dl>
           <div className="row" style={{ marginTop: 16 }}><Button onClick={() => act(A.cancelRequest(persona, st.req!.id))}>Cancel request</Button></div>
@@ -180,7 +182,7 @@ function ContactCard() {
   return (
     <GlassCard title="My details" subtitle="You can edit phone and emergency contact. The rest is managed by the Accommodation Admin.">
       <div className="stack">
-        <dl className="kv"><dt>Employee ID</dt><dd className="mono">{me.id}</dd><dt>Department</dt><dd>{me.dept}</dd><dt>National ID</dt><dd className="mono">•••• 4417</dd></dl>
+        <dl className="kv"><dt>Employee ID</dt><dd className="mono">{me.id}</dd><dt>Department</dt><dd>{me.dept}</dd></dl>
         <Field label="Phone"><Input value={phone} onChange={e => setPhone(e.target.value)} /></Field>
         <Field label="Emergency contact"><Input value={ec} onChange={e => setEc(e.target.value)} /></Field>
         <div><Button onClick={() => act(A.updateOwnContact(persona, { phone, emergencyContact: ec }))}>Save changes</Button></div>
@@ -199,5 +201,22 @@ export function SosModal({ open, onClose }: { open: boolean; onClose: () => void
       <Field label="What’s happening?" hint="Optional. Sending is enough." optional><Textarea value={text} onChange={e => setText(e.target.value)} /></Field>
       <Alert tone="warning" title="If the app is unreachable, call the front desk" detail="Phone and physical fallback is always available. The app can’t guarantee delivery during a network outage." />
     </Modal>
+  )
+}
+
+function ChangesCard({ reqId }: { reqId: string }) {
+  const { s, persona } = useCtx()
+  const act = useAct()
+  const q = s.requests.find(x => x.id === reqId)!
+  const [arrival, setArrival] = useState(q.arrival), [end, setEnd] = useState(q.end), [note, setNote] = useState(q.note)
+  return (
+    <GlassCard title="Your request needs changes" subtitle="Nothing is reserved while it is with you" actions={<Status s="Submitted" label="Changes requested" />}>
+      <div className="stack">
+        <Alert tone="warning" title="What the approver asked for" detail={q.changeNote} />
+        <div className="grid even"><Field label="Arrival"><Input type="date" value={arrival} onChange={e => setArrival(e.target.value)} /></Field><Field label="Planned end"><Input type="date" value={end} onChange={e => setEnd(e.target.value)} /></Field></div>
+        <Field label="Note"><Textarea value={note} onChange={e => setNote(e.target.value)} /></Field>
+        <div className="row"><Button variant="primary" onClick={() => act(A.resubmitRequest(persona, q.id, { arrival, end, note }))}>Resubmit</Button><Button onClick={() => act(A.cancelRequest(persona, q.id))}>Withdraw</Button></div>
+      </div>
+    </GlassCard>
   )
 }

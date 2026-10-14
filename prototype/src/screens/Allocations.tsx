@@ -99,8 +99,8 @@ export function CheckInModal({ reservationId, onClose }: { reservationId: string
       </>}>
       <Stepper steps={['Identity', 'Readiness', 'Keys', 'Confirm']} current={step} />
       {step === 0 && <div className="stack">
-        <div className="row"><span className="avatar lg">{staff.name.split(' ').map(x => x[0]).join('')}</span><div><b>{staff.name}</b><div className="muted body-sm">{staff.id} · {staff.dept} · National ID •••• 4417</div></div><span className="spacer" />{status === 'No-show' && <Status s="No-show" />}</div>
-        <Alert tone="info" title="Verify against the photo on file" detail="Reception and Security see identity data only. Eligibility data stays with admins." />
+        <div className="row"><span className="avatar lg">{staff.name.split(' ').map(x => x[0]).join('')}</span><div><b>{staff.name}</b><div className="muted body-sm">{staff.id} · {staff.dept}</div></div><span className="spacer" />{status === 'No-show' && <Status s="No-show" />}</div>
+        {staff.hasPhoto ? <Alert tone="info" title="Verify against the photo on file" detail="Reception and Security see identity data only. Eligibility data stays with admins." /> : <Alert tone="warning" title="No photo on file" detail="Check the employee ID card in person. No ID number is stored. Ask the Accommodation Admin to add a photo." />}
         <Check checked={idOk} onChange={setIdOk}>I have verified this person’s identity</Check>
         {status === 'No-show' && <Field label="Reason (for extending or cancelling)" optional><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>}
       </div>}

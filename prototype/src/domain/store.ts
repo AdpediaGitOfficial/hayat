@@ -1,53 +1,24 @@
-import { useSyncExternalStore } from 'react'
 import type {
   Bed, BedState, Clearance, Emergency, Fail, MigrationRow, Notification, Persona, Res, State, Staff, StayType,
 } from './types'
 import { buildSeed } from './seed'
 import { DAY, HOUR, addDays, dateStr, fmtDate, fmtDateTime, nowMs, resetClock, today } from './time'
 import {
-  activeStayOfBed, activeStayOfStaff, bedAllocatable, bedById, bedConflict, can, deny, eligibility, inScope, isPA, openReservationOfStaff,
+  activeStayOfBed, activeStayOfStaff, bedAllocatable, bedById, bedConflict, can, deny, eligibility, hasRole, inScope, isPA, openReservationOfStaff,
   outOfScope, roomOf, selfAction, staffById, suggestBeds, type Perm,
 } from './rules'
 
-/* ============ external store with all-or-nothing commits ============ */
-let state: State = buildSeed()
-const listeners = new Set<() => void>()
-const emit = () => listeners.forEach(f => f())
-export const getState = () => state
-export function useAppState(): State {
-  return useSyncExternalStore(f => { listeners.add(f); return () => listeners.delete(f) }, () => state)
-}
-export function resetState() { resetClock(); state = buildSeed(); emit() }
+import {
+  fail, fullName, bedCode, guard, log, notify, ok, openCleaning, reauth, registerTick, run, runTick, setBed, uid,
+} from './core'
+export { getState, resetState, useAppState } from './core'
+import { commsActions } from './ext/comms'
+import { accessActions } from './ext/access'
+import { structureActions } from './ext/structures'
+import { securityActions, contractorAccess } from './ext/security'
+import { outageActions } from './ext/outage'
 
-/** Every business operation runs on a clone and is committed only if it fully succeeds. A failed transfer therefore leaves the resident where they were. */
-function run<T = void>(fn: (d: State) => Res<T>): Res<T> {
-  const d = structuredClone(state)
-  let r: Res<T>
-  try { r = fn(d) } catch (e) { r = { ok: false, reason: 'Unexpected error: ' + (e as Error).message } }
-  if (r.ok) { state = d; emit() }
-  return r
-}
-const uid = (d: State, p: string) => `${p}${++d.seq}`
-const fail = (reason: string, owner?: string, next?: string): Fail => ({ ok: false, reason, owner, next })
-const ok = <T = void>(msg?: string, data?: T): Res<T> => ({ ok: true, msg, data })
-const log = (d: State, actor: Persona | string, action: string, detail: string) =>
-  d.audit.unshift({ id: uid(d, 'A'), at: nowMs(), actor: typeof actor === 'string' ? actor : actor.name, action, detail })
-const notify = (d: State, n: Omit<Notification, 'id' | 'at'>) => d.notifications.unshift({ id: uid(d, 'N'), at: nowMs(), ...n })
-const guard = (...fs: (Fail | null)[]) => fs.find(Boolean) ?? null
-const reauth = (confirm: boolean | undefined, what: string): Fail | null =>
-  confirm ? null : fail(`Re-enter your password to ${what}`, 'High-risk action (D-03)', 'Tick “I confirm” to continue')
-
-const fullName = (d: State, id: string) => staffById(d, id)?.name ?? id
-const bedCode = (d: State, id: string) => bedById(d, id)?.code ?? id
-
-function openCleaning(d: State, bedId: string) {
-  d.cleaning.push({ id: uid(d, 'H'), bedId, status: 'Open', createdAt: nowMs() })
-}
-function setBed(d: State, bed: Bed, st: BedState, reason?: string) {
-  bed.state = st; bed.since = nowMs(); bed.reason = reason
-}
-
-export const A = {
+const base = {
   /* ---------------- requests & allocation ---------------- */
   submitRequest(actor: Persona, f: { staffId: string; arrival: string; end: string; stayType: StayType; note: string }) {
     return run<string>(d => {
@@ -60,7 +31,7 @@ export const A = {
       if (f.end < f.arrival) return fail('The end date is before the arrival date')
       if (staff.status !== 'Active') return fail(`${staff.name} has left the organisation and can't request accommodation`, 'Accommodation Admin', 'Reactivate via authorised rehire first')
       if (activeStayOfStaff(d, staff.id) || openReservationOfStaff(d, staff.id)) return fail(`${staff.name} already has a stay or reservation`, 'Accommodation Admin', 'Use transfer or extension instead')
-      if (d.requests.some(r => r.staffId === staff.id && r.status === 'Submitted')) return fail(`${staff.name} already has an open request`, 'Accommodation Admin', 'Decide the existing request first')
+      if (d.requests.some(r => r.staffId === staff.id && (r.status === 'Submitted' || r.status === 'ChangesRequested'))) return fail(`${staff.name} already has an open request`, 'Accommodation Admin', 'Decide the existing request first')
       const id = uid(d, 'Q')
       d.requests.push({ id, staffId: staff.id, createdAt: nowMs(), arrival: f.arrival, end: f.end, stayType: f.stayType, note: f.note, status: 'Submitted', submittedBy: actor.staffId ?? actor.id, onBehalf: !own })
       log(d, actor, 'Request submitted', `${staff.name}, arrival ${fmtDate(f.arrival)}${own ? '' : ' (on behalf)'}`)
@@ -83,7 +54,7 @@ export const A = {
       if (held) return held
       // revalidate at confirm time: the bed may have changed since it was selected (concurrency)
       const c = bedConflict(d, bed.id, { from: q.arrival, to: q.end })
-      if (c) return fail(`${bed.code} was just taken: ${c.who} holds it for overlapping dates`, 'Another admin', 'Pick the next suggested bed')
+      if (c) return c.kind === 'block' ? fail(`${bed.code} is blocked for those dates: ${c.who}`, 'Maintenance Coordinator', 'Pick another bed') : fail(`${bed.code} was just taken: ${c.who} holds it for overlapping dates`, 'Another admin', 'Pick the next suggested bed')
       let el = eligibility(d, staff, bed)
       if (!el.ok && opts.exceptionReason) {
         const g = guard(deny(actor, 'request.exception', 'approve eligibility exceptions'))
@@ -119,7 +90,7 @@ export const A = {
   cancelRequest(actor: Persona, requestId: string) {
     return run(d => {
       const q = d.requests.find(x => x.id === requestId)
-      if (!q || q.status !== 'Submitted') return fail('Only open requests can be cancelled')
+      if (!q || (q.status !== 'Submitted' && q.status !== 'ChangesRequested')) return fail('Only open requests can be cancelled')
       if (actor.staffId !== q.staffId && !can(actor, 'request.approve')) return fail('Only the requester or an admin can cancel')
       q.status = 'Cancelled'; log(d, actor, 'Request cancelled', fullName(d, q.staffId))
       return ok('Request cancelled')
@@ -244,7 +215,7 @@ export const A = {
       const st = d.stays.find(x => x.id === stayId)
       if (!st || st.status !== 'Active') return fail('No active stay')
       if (actor.staffId !== st.staffId) return fail('Only the resident can request checkout')
-      st.checkoutRequested = true
+      st.checkoutRequested = true; st.checkoutRequestedAt = nowMs()
       log(d, actor, 'Checkout requested', `${fullName(d, st.staffId)} · ${bedCode(d, st.bedId)}`)
       notify(d, { toRole: 'Rec', text: `${fullName(d, st.staffId)} requested checkout from ${bedCode(d, st.bedId)}. Acknowledge within 1 business day.` })
       return ok('Checkout requested. Reception will confirm within 1 business day')
@@ -294,7 +265,7 @@ export const A = {
       d.offers.push({ id, entryId: en.id, staffId: staff.id, bedId: bed.id, createdAt: nowMs(), status: 'Pending' })
       bed.heldBy = id; en.status = 'Offered'
       log(d, actor, 'Bed offered', `${staff.name} ← ${bed.code}`)
-      notify(d, { toStaffId: staff.id, text: `A bed is offered to you (${bed.code}). Accept or decline within ${d.config.offerHours} hours of reading this.`, email: true })
+      notify(d, { toStaffId: staff.id, text: `A bed is offered to you (${bed.code}). Accept or decline within ${d.config.offerHours} hours of reading this.`, email: true, ref: { kind: 'offer', id } })
       return ok(`Offer sent. ${bed.code} is held for ${staff.name}. The 48h timer starts on confirmed delivery`)
     })
   },
@@ -549,7 +520,7 @@ export const A = {
       const it = c.items.find(x => x.id === itemId)!
       const e = guard(deny(actor, 'clearance.task', 'update clearance tasks'))
       if (e) return e
-      if (it.owner === 'Maintenance' && actor.role === 'Rec') return fail('Inspection items are owned by Maintenance', 'Maintenance Coordinator', 'Ask Maintenance to complete this item')
+      if (it.owner === 'Maintenance' && hasRole(actor, 'Rec') && !hasRole(actor, 'MC')) return fail('Inspection items are owned by Maintenance', 'Maintenance Coordinator', 'Ask Maintenance to complete this item')
       it.status = done ? 'Done' : 'Open'
       log(d, actor, 'Clearance item', `${fullName(d, c.staffId)} · ${it.label} → ${it.status}${actor.staffId !== c.staffId ? ' (on resident’s behalf)' : ''}`)
       return ok(done ? 'Item completed' : 'Item reopened')
@@ -714,7 +685,7 @@ export const A = {
       const sid = uid(d, 'S'), eid = uid(d, 'EM')
       d.stays.push({ id: sid, bedId: bed.id, staffId: staff.id, start: today(), status: 'Active', source: 'Provisional', stayType: 'Contract', endPending: true, emergencyId: eid })
       setBed(d, bed, 'Occupied')
-      const approverRole: 'AA' | 'PA' = actor.role === 'AA' ? 'PA' : 'AA'
+      const approverRole: 'AA' | 'PA' = hasRole(actor, 'AA') ? 'PA' : 'AA'
       d.emergencies.push({ id: eid, stayId: sid, staffId: staff.id, bedId: bed.id, initiatorId: actor.id, initiatorRole: actor.role, approverRole, reason: f.reason, createdAt: nowMs(), status: 'Pending', reminders: 0, escalation: 0 })
       log(d, actor, 'Emergency check-in', `${staff.name} → ${bed.code} (provisional): ${f.reason}`)
       notify(d, { toRole: approverRole === 'AA' ? 'AA' : 'PA', text: `Emergency check-in needs your decision within ${d.config.emergencyDeadlineHours}h: ${staff.name} → ${bed.code}` })
@@ -729,7 +700,7 @@ export const A = {
       let allowed: boolean
       if (m.escalation === 0) allowed = m.approverRole === 'AA' ? can(actor, 'emergency.approve') || isPA(actor) : isPA(actor)
       else if (m.escalation === 1) allowed = can(actor, 'emergency.backup') || isPA(actor)
-      else allowed = isPA(actor) || actor.role === 'SA'
+      else allowed = isPA(actor) || hasRole(actor, 'SA')
       if (!allowed) {
         const who = m.escalation === 0 ? (m.approverRole === 'AA' ? 'an Accommodation Admin' : 'the Policy Approver') : m.escalation === 1 ? 'the backup approver or Policy Approver' : 'the Policy Approver or a Super Admin'
         return fail(`${actor.name} isn't on the current approval route`, who, `Currently routed to ${who}`)
@@ -827,7 +798,7 @@ export const A = {
     return run(d => {
       d.incidents.unshift({ id: uid(d, 'I'), kind, staffId: actor.staffId, text, at: nowMs() })
       log(d, actor, kind === 'SOS' ? 'SOS raised' : 'Incident reported', text)
-      notify(d, { toRole: 'Sec', text: `${kind}: ${text}` })
+      notify(d, { toRole: 'Sec', text: `${kind}: ${text}`, ...(kind === 'SOS' ? { email: true, critical: true } : {}) })
       return ok(kind === 'SOS' ? 'SOS sent to on-duty Security and the emergency contact. Call the front desk if you can' : 'Incident reported')
     })
   },
@@ -861,6 +832,12 @@ export const A = {
   advanceWorkOrder(actor: Persona, id: string, to: 'In progress' | 'Resolved' | 'Verified', assignee?: string) {
     return run(d => {
       const w = d.workOrders.find(x => x.id === id); if (!w) return fail('Not found')
+      if (hasRole(actor, 'Vend')) {
+        // a contractor works only on their own vendor's jobs, inside contract + documents + job + visit window (D-76)
+        if (w.assignee !== actor.vendor) return fail('Not found')
+        const why = contractorAccess(d, actor.vendor ?? '', w.id, nowMs())
+        if (why) return fail(`Access not valid: ${why}`, 'Maintenance Coordinator', 'Ask for a gate pass and a visit window')
+      }
       if (to === 'In progress') {
         const e = guard(can(actor, 'workorder.manage') || can(actor, 'workorder.work') ? null : deny(actor, 'workorder.manage', 'assign work'))
         if (e) return e
@@ -928,12 +905,12 @@ export const A = {
   },
 
   /* ---------------- time-driven processing: reminds and escalates, never decides ---------------- */
-  tick() {
-    const now = nowMs()
-    const d0 = state
-    let changed = false
-    const d = structuredClone(d0)
-    const note = (n: Omit<Notification, 'id' | 'at'>) => { d.notifications.unshift({ id: uid(d, 'N'), at: now, ...n }); changed = true }
+  tick() { runTick() },
+}
+
+
+/* ---- core time-driven rules (waitlist, offers, reservations, emergencies) ---- */
+registerTick(({ d, now, note, touch }) => {
     // waitlist reminders + expiry (D-47)
     for (const w of d.waitlist) {
       if (w.status === 'Closed') continue
@@ -943,7 +920,7 @@ export const A = {
         }
       }
       if (w.status === 'Waiting' && now >= w.expiresAt) {
-        w.status = 'Closed'; w.closeReason = 'Expired'; changed = true
+        w.status = 'Closed'; w.closeReason = 'Expired'; touch()
         note({ toStaffId: w.staffId, text: 'Your waitlist entry expired. Ask to renew it to rejoin the queue.', email: true })
         log(d, 'System', 'Waitlist expired', fullName(d, w.staffId))
       }
@@ -959,13 +936,13 @@ export const A = {
         const en = d.waitlist.find(x => x.id === o.entryId); if (en && en.status === 'Offered') en.status = 'Waiting'
         log(d, 'System', 'Offer expired', `${fullName(d, o.staffId)} · ${bedCode(d, o.bedId)} · bed released, resident not removed from waitlist`)
         note({ toRole: 'AA', text: `Offer to ${fullName(d, o.staffId)} for ${bedCode(d, o.bedId)} expired unanswered.` })
-        changed = true
+        touch()
       }
     }
     // reservation expiry 24h after planned arrival (D-58)
     for (const r of d.reservations) {
       if (r.status === 'Reserved' && now > r.eta + d.config.noShowHours * HOUR) {
-        r.status = 'Expired'; changed = true; log(d, 'System', 'Reservation expired (no-show)', `${fullName(d, r.staffId)} · ${bedCode(d, r.bedId)}`)
+        r.status = 'Expired'; touch(); log(d, 'System', 'Reservation expired (no-show)', `${fullName(d, r.staffId)} · ${bedCode(d, r.bedId)}`)
         note({ toRole: 'AA', text: `${fullName(d, r.staffId)} didn't arrive. Reservation for ${bedCode(d, r.bedId)} expired.` })
       }
     }
@@ -975,14 +952,14 @@ export const A = {
       const due = Math.floor((now - m.createdAt) / (d.config.emergencyDeadlineHours * HOUR))
       while (m.reminders < due) {
         m.reminders++
-        note({ toRole: m.escalation === 0 && m.approverRole === 'AA' ? 'AA' : 'PA', text: `Reminder ${m.reminders}: emergency check-in for ${fullName(d, m.staffId)} still needs a decision.` })
-        if (m.reminders >= d.config.emergencyEscalateAfter && m.escalation < 1) { m.escalation = 1; note({ toRole: 'PA', text: `Escalated to backup approver: emergency check-in for ${fullName(d, m.staffId)} unanswered after ${m.reminders} reminders.` }) }
-        else if (m.reminders > d.config.emergencyEscalateAfter) { m.escalation = 2; note({ toRole: 'PA', text: `Escalated to Policy Approver / Super Admin: emergency check-in for ${fullName(d, m.staffId)} (critical).` }) }
+        note({ toRole: m.escalation === 0 && m.approverRole === 'AA' ? 'AA' : 'PA', email: true, critical: true, text: `Reminder ${m.reminders}: emergency check-in for ${fullName(d, m.staffId)} still needs a decision.` })
+        if (m.reminders >= d.config.emergencyEscalateAfter && m.escalation < 1) { m.escalation = 1; note({ toRole: 'PA', email: true, critical: true, text: `Escalated to backup approver: emergency check-in for ${fullName(d, m.staffId)} unanswered after ${m.reminders} reminders.` }) }
+        else if (m.reminders > d.config.emergencyEscalateAfter) { m.escalation = 2; note({ toRole: 'PA', email: true, critical: true, text: `Escalated to Policy Approver / Super Admin: emergency check-in for ${fullName(d, m.staffId)} (critical).` }) }
         log(d, 'System', 'Emergency reminder', `${fullName(d, m.staffId)} · reminder ${m.reminders} · level ${m.escalation}`)
       }
     }
-    if (changed) { state = d; emit() }
-  },
-}
+})
+
+export const A = { ...base, ...commsActions, ...accessActions, ...structureActions, ...securityActions, ...outageActions }
 
 export { suggestBeds, inScope, dateStr, fmtDateTime }

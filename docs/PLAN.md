@@ -222,27 +222,27 @@ A scheduler runs every minute and selects due items with `FOR UPDATE SKIP LOCKED
 
 ---
 
-## 12. Prototype hardening (parallel track)
+## 12. Prototype hardening (parallel track): done
 
-So the sign-off demo shows every Phase 1 flow and matches the corrected rules. These are the gaps from `GAP-ANALYSIS.md` section 5.
+All fifteen items are built and covered by tests (70 in total). The prototype now shows every Phase 1 flow.
 
-| # | Item | Closes |
+| # | Item | Status |
 |---|---|---|
-| P-1 | Make delegation actually route approvals | D-32 |
-| P-2 | Generate end-date reminders and overdue escalation notices | D-55, D-56 |
-| P-3 | Notification delivery log: queued, sent, failed, retry, dedupe | AT-014, AT-030 |
-| P-4 | Visitor register and gate flow | FPD §13.1 |
-| P-5 | Contractor accounts, visit windows, scope checks | AT-023, AT-024 |
-| P-6 | SOS escalation chain | AT-025 |
-| P-7 | Outage export audited, plus reconciliation screen | AT-026, AT-027 |
-| P-8 | Rehire (reactivation of the same profile) | AT-032 |
-| P-9 | Users, capability grants and maker-checker | D-22, D-27 |
-| P-10 | Room and building archive with dependency checks and blocking cascade | D-19, AT-029 |
-| P-11 | Date-ranged bed blocks | HP idea |
-| P-12 | "Approved, action failed" state and "changes requested" loop | HP ideas |
-| P-13 | Remove invented fields (national ID, photo, static trends) | G-05 |
-| P-14 | Reword AT-021 per C-6 and add tests for CSV preview and partial import (AT-004, AT-005) | C-6 |
-| P-15 | Guided demo journey checklist | HP idea |
+| P-1 | Delegation routes approvals; separation of duties still applies to the delegate | Done |
+| P-2 | End-date reminders, overdue escalation notices, checkout acknowledgement | Done |
+| P-3 | Notification delivery log: queued, retrying, sent, delivered, failed; dedupe; offer clock starts on confirmed email delivery | Done |
+| P-4 | Visitor register and gate flow | Done |
+| P-5 | Contractor visit windows, gate checks, vendor scope | Done |
+| P-6 | SOS escalation chain | Done |
+| P-7 | Audited outage export and reconciliation | Done |
+| P-8 | Rehire | Done |
+| P-9 | Users, capability grants, maker-checker, account revocation | Done |
+| P-10 | Room and building archive with dependency checks; blocking cascade | Done |
+| P-11 | Date-ranged bed blocks | Done |
+| P-12 | "Approved, action failed" label and "changes requested" loop | Done |
+| P-13 | Invented fields and static trends removed | Done |
+| P-14 | AT-021 reworded, CSV preview and partial import tested; amendments for SRS v1.2 written | Done (`SPEC-AMENDMENTS.md`) |
+| P-15 | Guided demo journey | Done |
 
 ---
 
@@ -311,5 +311,5 @@ Unanswered items are built behind configuration or a clearly marked placeholder,
 
 1. You confirm or change the remaining technical decisions in section 3. **T-1 (PostgreSQL) is decided (D-102).**
 2. I run **Stage 0**: scaffold the production app, CI, container setup and schema v0 with the overlap constraint and its tests, and port the domain rules.
-3. In parallel I work down the **prototype hardening list** (section 12), starting with P-3, P-1, P-2 and P-13.
+3. The **prototype hardening list** (section 12) is complete.
 4. Grand Hyatt receives the blocker and gap question list (`GAP-ANALYSIS.md` section 6).

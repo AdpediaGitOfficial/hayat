@@ -54,12 +54,14 @@ const STATUS_TONE: Record<string, Tone> = {
   // clearance & work
   Open: 'warning', Resolved: 'info', Verified: 'success', Done: 'success', Waived: 'info', 'In progress': 'info',
   // emergency
-  Escalated: 'danger', Executed: 'success',
+  Escalated: 'danger', Executed: 'success', Failed: 'danger', ChangesRequested: 'warning', Denied: 'danger', Revoked: 'danger',
+  'Pre-registered': 'brand', 'Walk-in pending': 'warning', 'Gate pass valid': 'info', 'Checked out': 'neutral',
   Left: 'neutral',
 }
 export const statusTone = (s: string): Tone => STATUS_TONE[s] ?? 'neutral'
 const LABELS: Record<string, string> = {
   NeedsCleaning: 'Needs cleaning', InspectionRequired: 'Inspection required', UnderMaintenance: 'Under maintenance', CheckedIn: 'Checked in',
+  Failed: 'Approved, action failed', ChangesRequested: 'Changes requested',
 }
 export function Status({ s, label }: { s: string; label?: string }) {
   return <Badge tone={statusTone(s)}>{label ?? LABELS[s] ?? s}</Badge>

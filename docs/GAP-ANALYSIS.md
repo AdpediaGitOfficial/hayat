@@ -20,7 +20,7 @@ Method: read the FPD in full; diffed it against the SRS already in the repo; rea
 1. **The FPD adds no new requirements.** It is the SRS plus the older permission matrix (§20) and approval tree (§21). Those two sections predate the Policy Approver decision (D-25) and conflict with the decision log in ten places (section 2). The specification set needs one merged, current version.
 2. **The specification still has real holes.** The seven release blockers in SRS §18.1 are known. This review found **27 further gaps** (section 3). Seven of them block a correct Stage 1 or Stage 2 build, but all have a proposed default, so none needs to stop the work.
 3. **The HTML prototype is not a Grand Hyatt build.** It models a generic Dubai staff camp with eight roles, line-manager approvals, WhatsApp and Firestore. It covers inventory, allocation, maintenance, keys and a basic approval flow, but not the waitlist, emergency, clearance, readiness or security flows, and it conflicts with eight decisions. It does contain ten ideas worth adopting (section 4).
-4. **Our prototype covers all nine planned flows but is a demo.** 20 of 32 acceptance tests are verified against its business rules, 12 are not (section 5). It has no server, so none of its permission checks is a security boundary yet.
+4. **Our prototype covers all Phase 1 flows but is a demo.** After the hardening pass all 32 acceptance tests are verified against its business rules (section 5), plus delegation, grants and maker-checker. It has no server, so none of its permission checks is a security boundary yet.
 5. **The hardest requirements are invariants, not screens.** No double allocation, immediate login revocation, append-only audit, atomic transfer. They should be enforced by the database, not only by application code. That drives the main technical recommendation in `PLAN.md`: **PostgreSQL**, not the Firestore the HTML prototype assumes.
 
 ---
@@ -135,43 +135,40 @@ Searched the file for each term; none were found: **waitlist, bed offers, provis
 
 ### 5.1 Coverage of the SRS acceptance tests
 
-Covered by automated tests against the prototype's business rules (20): AT-003, 006, 007, 008, 009, 010, 011, 012, 013, 015, 016, 017, 018, 019, 020, 021*, 022, 028, 029†, 030.
+*Updated after the hardening pass (see `PLAN.md` section 12).* All 32 acceptance tests now have an automated test against the prototype's business rules (70 tests in total). These prove the rules; production must repeat them against the real API and database.
 
-\* Verified under the D-18 reading (conflict C-6). † Beds only; room and building archiving are not built.
-
-| Not verified | Why |
+| Tests | Where |
 |---|---|
-| AT-004, AT-005 CSV preview and partial import | Works in the UI; no automated test yet. |
-| AT-026 Outage export | Downloads a watermarked file but is **not written to the audit log**. |
-| AT-001, AT-002 Access control by URL or API | Needs a server. The prototype checks permissions on actions only. |
-| AT-031 Report scope | Needs a server. |
-| AT-014 Email failure and retry | Notifications are instant and have no delivery status. |
-| AT-023, AT-024 Contractor prerequisites and scope | Contractor flow not built. |
-| AT-025 SOS escalation | Acknowledgement countdown only; no escalation chain. |
-| AT-027 Outage reconciliation | Not built. |
-| AT-032 Rehire | Not built. |
+| AT-003, 006 to 013, 015 to 022, 028 to 030 | `tests/scenarios.test.ts` (AT-021 under the D-18 reading, conflict C-6) |
+| AT-001, 002, 031 (scoped reads, data minimisation, export control) | `tests/hardening.test.ts` |
+| AT-004, 005 (CSV preview and partial import) | `tests/hardening.test.ts` |
+| AT-014 (email failure, retry, "sent" is not "delivered") | `tests/hardening.test.ts` |
+| AT-023, 024 (contractor gate and scope), AT-025 (SOS escalation) | `tests/hardening.test.ts` |
+| AT-026, 027 (audited outage export, reconciliation), AT-032 (rehire) | `tests/hardening.test.ts` |
 
-### 5.2 Specified in the decision log but not built or only partly built
+Also covered by new tests: delegation, capability grants with maker-checker, account revocation, structure blocking and archiving, date-ranged blocks, "changes requested", visitor flow, end-date reminders. Proposed new acceptance tests AT-033 to AT-035 are in `SPEC-AMENDMENTS.md`.
 
-| Item | Reference | State in the prototype |
+What the prototype still cannot prove: access control across a real network boundary (URL and API tampering), concurrent writers on a real database, and the behaviour of a real email provider. Those are Stage 1, 2 and 5 work.
+
+### 5.2 Specified in the decision log: status after hardening
+
+| Item | Reference | State |
 |---|---|---|
-| Delegation actually routing approvals | D-32 | **Recorded only**; the inbox ignores it. |
-| End-date reminders (14, 7, 1 days) and overdue escalation notices | D-55, D-56 | Shown on screens; **no notifications generated**. |
-| Voluntary-checkout acknowledgement within 1 business day | D-63 | No timer. |
-| Visitor register and gate flow | FPD §13.1 | Not built. |
-| Contractor accounts and visit-window checks | D-76 | Dashboard mock only. |
-| Capability grants, user management, maker-checker for role changes | D-22, D-27 | Not built. |
-| Invitation, activation, admin-assisted password reset | D-07, D-08 | Not built. Re-confirmation is a tick box. |
-| Room and building archiving with dependency checks, blocking cascade | D-19 | Beds only. |
-| Bulk exit with preview | D-38 | Not built. |
-| Date-ranged bed blocks | HP idea | On/off only. |
-| Asset handover, key cabinet | G-19 | Not built. |
+| Delegation routing approvals | D-32 | **Built** |
+| End-date reminders, overdue escalation | D-55, D-56 | **Built** (notifications generated once) |
+| Voluntary-checkout acknowledgement | D-63 | **Built** |
+| Visitor register and gate flow | FPD §13.1 | **Built** (hours are placeholders, GH-10) |
+| Contractor accounts, visit windows, gate checks | D-76 | **Built** |
+| Capability grants, accounts, maker-checker | D-22, D-27 | **Built** (with only two Super Admins a change to either stays pending, by design) |
+| Invitation, activation, password reset | D-07, D-08 | Admin-assisted reset and forced change **built**; invitation email flow is Stage 1 |
+| Room and building archiving, blocking cascade | D-19 | **Built** |
+| Bulk exit with preview | D-38 | Not built |
+| Date-ranged bed blocks | HP idea | **Built** |
+| Asset handover, key cabinet | G-19 | Not built (key model still open, D-72) |
 
 ### 5.3 Placeholder content that must not reach production
-- "National ID •••• 4417" and "Photo on file": there is no such field in the specification (G-05).
-- Static trend arrows and deltas on KPI tiles ("2.1 pts", "vs yesterday").
-- The Security screen's "Contractors on site" tile.
-- Seed names, phone numbers and beds.
+- ~~National ID, static trends, fake contractor tile~~ **removed**: check-in now shows a photo-on-file flag (optional photo, no ID numbers stored, G-05); KPI tiles show real counts.
+- Seed names, phone numbers, beds, vendors and visitors are dummy data.
 
 ### 5.4 Engineering limits
 - It clones the whole state for every action. Fine for a demo, not for production.

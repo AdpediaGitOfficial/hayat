@@ -68,10 +68,23 @@ export function Maintenance() {
 }
 
 /* ============ Incidents & SOS ============ */
+export function CloseIncidentModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const { persona } = useCtx()
+  const act = useAct()
+  const [note, setNote] = useState('')
+  return (
+    <Modal open onClose={onClose} title="Close this incident" subtitle="Closing needs the action taken and the time"
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={() => act(A.closeIncident(persona, id, note), onClose)}>Close incident</Button></>}>
+      <Field label="Action taken"><Textarea value={note} onChange={e => setNote(e.target.value)} /></Field>
+    </Modal>
+  )
+}
+
 export function Incidents() {
   const { s, persona } = useCtx()
   const act = useAct()
   const [text, setText] = useState('')
+  const [closing, setClosing] = useState<string | null>(null)
   const rows = s.incidents
   return (
     <>
@@ -81,12 +94,13 @@ export function Incidents() {
         <div className="stack"><Field label="What happened?"><Textarea value={text} onChange={e => setText(e.target.value)} /></Field>
           <div className="row"><Button onClick={() => act(A.raiseSOS(persona, text || 'Incident', 'Incident'), () => setText(''))}>Report incident</Button>{can(persona, 'sos.raise') && <Button variant="danger" icon="siren" onClick={() => act(A.raiseSOS(persona, text || 'SOS', 'SOS'), () => setText(''))}>Send SOS</Button>}</div></div>
       </GlassCard>}
+      {closing && <CloseIncidentModal id={closing} onClose={() => setClosing(null)} />}
       <DataTable rowKey={i => i.id} rows={rows} empty="No incidents" cols={[
         { key: 'k', header: 'Type', render: i => <Badge tone={i.kind === 'SOS' ? 'danger' : 'warning'}>{i.kind}</Badge> },
         { key: 't', header: 'Details', render: i => <Person name={i.text} sub={`${i.staffId ? staffById(s, i.staffId)?.name : 'Staff'} · ${fmtDateTime(i.at)}`} /> },
-        { key: 'a', header: 'Acknowledgement', render: i => i.ackAt ? <Badge tone="success">Acknowledged</Badge> : <Countdown to={i.at + s.config.sosAckMinutes * 60000} label="to acknowledge" warnBelowMs={120000} /> },
+        { key: 'a', header: 'Acknowledgement', render: i => i.ackAt ? <Badge tone="success">Acknowledged</Badge> : <div><Countdown to={i.at + s.config.sosAckMinutes * 60000} label="to acknowledge" warnBelowMs={120000} />{(i.escalation ?? 0) > 0 && <Badge tone="danger">Escalated · level {i.escalation}</Badge>}</div> },
         { key: 's', header: 'Status', render: i => <Status s={i.closed ? 'Closed' : 'Open'} /> },
-        { key: 'x', header: '', align: 'r', render: i => can(persona, 'incident.ack') && !i.closed ? <div className="row" style={{ justifyContent: 'flex-end' }}>{!i.ackAt && <Button size="sm" variant="primary" onClick={() => act(A.ackIncident(persona, i.id))}>Acknowledge</Button>}{i.ackAt && <Button size="sm" onClick={() => act(A.closeIncident(persona, i.id))}>Close</Button>}</div> : null },
+        { key: 'x', header: '', align: 'r', render: i => can(persona, 'incident.ack') && !i.closed ? <div className="row" style={{ justifyContent: 'flex-end' }}>{!i.ackAt && <Button size="sm" variant="primary" onClick={() => act(A.ackIncident(persona, i.id))}>Acknowledge</Button>}{i.ackAt && <Button size="sm" onClick={() => setClosing(i.id)}>Close…</Button>}</div> : null },
       ]} />
     </>
   )
@@ -96,20 +110,16 @@ export function Incidents() {
 export function Reports() {
   const { s, persona, now } = useCtx()
   const T = today(now)
-  const canOutage = persona.caps.includes('OutageExport')
-  const canExport = persona.role !== 'Mgr' && persona.role !== 'Sec'
+  const canOutage = can(persona, 'outage.export')
+  const canExp = can(persona, 'report.export')
   const overdue = s.stays.filter(x => x.status === 'Active' && ['overdue', 'escalated'].includes(stayState(x, T, s.config)))
-  const outage = () => {
-    const arrivals = s.reservations.filter(r => r.status === 'Reserved' && r.from <= addDays(T, 1))
-    const departures = s.stays.filter(x => x.status === 'Active' && (x.end === T || x.end === addDays(T, 1) || x.checkoutRequested))
-    const csv = ['CONFIDENTIAL · OUTAGE SNAPSHOT · generated ' + fmtDateTime(now) + ' by ' + persona.name, 'type,employee,name,bed,date',
-      ...arrivals.map(r => `arrival,${r.staffId},${staffById(s, r.staffId)?.name},${bedById(s, r.bedId)?.code},${r.from}`),
-      ...departures.map(x => `departure,${x.staffId},${staffById(s, x.staffId)?.name},${bedById(s, x.bedId)?.code},${x.end ?? 'requested'}`)].join('\n')
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'outage-snapshot.csv'; a.click()
-  }
+  const act = useAct()
+  const download = (csv: string, name: string) => { const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click() }
+  const exportKind = (kind: 'occupancy' | 'stays' | 'arrivals') => act(A.exportReport(persona, kind), r => download((r.data as { csv: string }).csv, `${kind}-report.csv`))
+  const outage = () => act(A.exportOutageSnapshot(persona), r => download(r.data as string, 'outage-snapshot.csv'))
   return (
     <>
-      <PageHeader crumbs={['Insight']} title="Reports" summary="Every figure rolls up from bed states. Scope-limited and export-controlled on the server." actions={canExport ? <Button icon="download" onClick={() => window.print()}>Print / save PDF</Button> : <Badge outline>Export needs a grant</Badge>} />
+      <PageHeader crumbs={['Insight']} title="Reports" summary="Every figure rolls up from bed states. Scope-limited and export-controlled on the server." actions={canExp ? <><Button icon="download" onClick={() => exportKind('occupancy')}>Occupancy CSV</Button><Button icon="download" onClick={() => exportKind('stays')}>Stays CSV</Button><Button onClick={() => window.print()}>Print / PDF</Button></> : <Badge outline>Export needs a grant</Badge>} />
       <div className="grid even">{s.sites.filter(x => persona.sites === 'all' || persona.sites.includes(x.id)).map(site => <GlassCard key={site.id} title={site.name}><OccupancyBar {...occupancy(s, bedsInScope(s, persona, site.id))} scope={site.kind} /></GlassCard>)}</div>
       <GlassCard title="Occupancy by building" strong flush>
         <table className="tbl"><thead><tr><th>Site</th><th>Building</th><th className="r">Beds</th><th className="r">Occupied</th><th className="r">Occupancy</th></tr></thead><tbody>
@@ -124,7 +134,7 @@ export function Reports() {
           {overdue.length === 0 && <tr><td colSpan={4}><div className="tbl-empty">None</div></td></tr>}</tbody></table>
       </GlassCard>
       {canOutage && <GlassCard title="Outage export" subtitle="Declared network outage only. Watermarked arrivals and departures snapshot. No offline bed allocation; reconcile after restoration." strong>
-        <Button icon="download" onClick={outage}>Download snapshot</Button>
+        <Button icon="download" onClick={outage}>Download snapshot (audited)</Button>
       </GlassCard>}
     </>
   )

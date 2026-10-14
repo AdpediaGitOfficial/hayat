@@ -7,7 +7,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 }
 export const CAP_LABEL: Record<Cap, string> = {
   Housekeeping: 'Housekeeping', FinalInspection: 'Final Inspection', EmergencyCheckin: 'Emergency Check-in', BuildingCreation: 'Building Creation',
-  NightKeys: 'Night Keys', BackupApprover: 'Backup Approver', PolicyApprover: 'Policy Approver', OutageExport: 'Outage Export', StaffMaster: 'Staff Master / HR',
+  NightKeys: 'Night Keys', BackupApprover: 'Backup Approver', PolicyApprover: 'Policy Approver', OutageExport: 'Outage Export', StaffMaster: 'Staff Master / HR', ReportExport: 'Report export',
 }
 
 /** Demo personas. Resident personas each sit at a different point of the accommodation journey (D-94). */
@@ -17,6 +17,7 @@ export const PERSONAS: Persona[] = [
   { id: 'p-pa', name: 'Suresh Menon', role: 'AA', caps: ['PolicyApprover'], title: 'Accommodation Manager · Policy Approver', staffId: 'E9003', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-backup', name: 'Naveen Kapoor', role: 'AA', caps: ['BackupApprover'], title: 'Assistant Manager · Backup Approver', staffId: 'E9004', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-sa', name: 'Vikram Shah', role: 'SA', caps: [], title: 'Super Admin (IT)', staffId: 'E9005', sites: 'all' },
+  { id: 'p-sa2', name: 'Meghna Rao', role: 'SA', caps: [], title: 'Super Admin (IT, second)', staffId: 'E9012', sites: 'all' },
   { id: 'p-rec', name: 'Rohan Das', role: 'Rec', caps: ['EmergencyCheckin', 'FinalInspection', 'OutageExport'], title: 'Reception Officer', staffId: 'E9002', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-res-staying', name: 'Rahul Menon', role: 'Res', caps: [], title: 'Resident · staying', staffId: 'E1007', sites: [] },
   { id: 'p-res-reserved', name: 'Ayesha Khan', role: 'Res', caps: [], title: 'Resident · reserved', staffId: 'E1012', sites: [] },
@@ -29,6 +30,7 @@ export const PERSONAS: Persona[] = [
   { id: 'p-mc', name: 'Meera Pillai', role: 'MC', caps: [], title: 'Maintenance Coordinator', staffId: 'E9006', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-tech', name: 'Arjun Nair', role: 'Tech', caps: [], title: 'Technician', staffId: 'E9007', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-vend', name: 'Imran @ CoolAir Services', role: 'Vend', caps: [], title: 'Contractor · CoolAir Services', sites: ['PV'], vendor: 'CoolAir Services' },
+  { id: 'p-vend2', name: 'Dinesh @ BrightSpark Electrical', role: 'Vend', caps: [], title: 'Contractor · BrightSpark Electrical', sites: ['PV'], vendor: 'BrightSpark Electrical' },
   { id: 'p-sec', name: 'Sanjay Kumar', role: 'Sec', caps: ['NightKeys'], title: 'Security', staffId: 'E9008', sites: ['PV', 'MA', 'LV'] },
   { id: 'p-mgr', name: 'Deepa Iyer', role: 'Mgr', caps: [], title: 'Read-only Manager', staffId: 'E9009', sites: 'all' },
   { id: 'p-aud', name: 'Farhan Ali', role: 'Aud', caps: [], title: 'Auditor', staffId: 'E9010', sites: 'all' },
@@ -38,9 +40,8 @@ export type NavItem = { id: string; label: string; icon: IconName; group: string
 const N = (id: string, label: string, icon: IconName, group: string): NavItem => ({ id, label, icon, group })
 const dash = N('dashboard', 'Dashboard', 'dashboard', '')
 
-export function navFor(p: Persona): NavItem[] {
+function navForRole(r: Role, p: Persona): NavItem[] {
   const has = (c: Cap) => p.caps.includes(c)
-  const r = p.role
   const isStaffAdmin = r === 'AA' || r === 'SA'
   const items: NavItem[] = [dash]
   if (r === 'Res') {
@@ -51,6 +52,7 @@ export function navFor(p: Persona): NavItem[] {
   if (isStaffAdmin || r === 'Rec' || has('StaffMaster')) items.push(N('staff', 'Staff directory', 'users', 'People'))
   if (isStaffAdmin) items.push(N('exits', 'Joiners & exits', 'exit', 'People'))
   if (isStaffAdmin || r === 'Rec' || r === 'MC') items.push(N('clearances', 'Clearances', 'clipboard', 'People'))
+  if (isStaffAdmin) items.push(N('users', 'Users & access', 'userCog', 'People'))
   if (['SA', 'AA', 'Rec', 'MC', 'Mgr'].includes(r)) items.push(N('inventory', 'Sites & rooms', 'building', 'Accommodation'))
   if (['SA', 'AA', 'Rec', 'Mgr'].includes(r)) items.push(N('allocations', 'Allocations', 'bed', 'Accommodation'))
   if (['SA', 'AA', 'Rec'].includes(r)) items.push(N('transfers', 'Transfers & swaps', 'swap', 'Accommodation'))
@@ -60,10 +62,20 @@ export function navFor(p: Persona): NavItem[] {
   if (['AA', 'Rec', 'MC'].includes(r) || has('Housekeeping') || has('FinalInspection')) items.push(N('housekeeping', 'Housekeeping', 'brush', 'Operations'))
   if (['AA', 'Rec', 'SA'].includes(r) || has('EmergencyCheckin')) items.push(N('emergency', 'Emergency check-in', 'siren', 'Operations'))
   if (['AA', 'Rec', 'SA'].includes(r) || has('NightKeys')) items.push(N('keys', 'Keys', 'key', 'Operations'))
+  if (['AA', 'Rec', 'Sec', 'SA'].includes(r)) items.push(N('visitors', 'Visitors', 'users', 'Operations'))
+  if (['AA', 'MC', 'Sec', 'SA'].includes(r)) items.push(N('contractors', r === 'Sec' ? 'Contractor gate' : 'Contractors', 'truck', 'Operations'))
+  if (['AA', 'SA'].includes(r) || has('OutageExport')) items.push(N('outage', 'Outage mode', 'radio', 'Operations'))
   if (['AA', 'Rec', 'MC', 'Tech', 'Vend', 'SA'].includes(r)) items.push(N('maintenance', 'Maintenance', 'wrench', 'Operations'))
   if (['AA', 'Rec', 'Sec', 'SA'].includes(r)) items.push(N('incidents', 'Incidents & SOS', 'shield', 'Operations'))
   if (['SA', 'AA', 'Rec', 'Mgr', 'MC', 'Sec', 'Aud'].includes(r)) items.push(N('reports', 'Reports', 'chart', 'Insight'))
+  if (isStaffAdmin) items.push(N('notifications', 'Notification log', 'send', 'Insight'))
   if (['SA', 'Aud'].includes(r) || has('PolicyApprover')) items.push(N('audit', 'Audit log', 'scroll', 'Insight'))
   if (r === 'SA') items.push(N('settings', 'Configuration', 'settings', 'Insight'))
   return items
+}
+const GROUP_ORDER = ['', 'My stay', 'Work', 'People', 'Accommodation', 'Requests', 'Operations', 'Insight']
+export function navFor(p: Persona): NavItem[] {
+  const merged = new Map<string, NavItem>()
+  for (const r of [p.role, ...(p.extraRoles ?? [])]) for (const n of navForRole(r, p)) if (!merged.has(n.id)) merged.set(n.id, n)
+  return [...merged.values()].sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group))
 }

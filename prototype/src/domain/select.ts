@@ -1,6 +1,7 @@
 import type { Bed, Persona, State } from './types'
-import { approvalClock, bedById, can, eligibility, inScope, isPA, roomOf, staffById } from './rules'
+import { approvalClock, bedById, can, eligibility, hasRole, inScope, isPA, roomOf, staffById } from './rules'
 import { today } from './time'
+import { PERSONAS } from '../roles'
 
 export const visibleSites = (s: State, p: Persona) => s.sites.filter(x => inScope(p, x.id))
 export const bedsInScope = (s: State, p: Persona, site?: string) =>
@@ -19,7 +20,7 @@ export function occupancy(s: State, beds: Bed[]) {
   return { occupied, reserved, available, blocked, total: beds.length }
 }
 
-export type ApprovalKind = 'Request' | 'Transfer' | 'Swap' | 'Extension' | 'Emergency' | 'Migration' | 'Work order'
+export type ApprovalKind = 'Request' | 'Transfer' | 'Swap' | 'Extension' | 'Emergency' | 'Migration' | 'Work order' | 'Permission'
 export type ApprovalItem = {
   key: string; kind: ApprovalKind; ref: string; title: string; sub: string; createdAt: number
   primary: string; backup: string; current: string; level: 0 | 1 | 2; reminders: number; label: string
@@ -27,11 +28,11 @@ export type ApprovalItem = {
 }
 
 function roleCanAct(p: Persona, route: 'AA' | 'PA' | 'MC' | 'PA/SA', level: 0 | 1 | 2) {
-  const aa = p.role === 'AA' || p.role === 'SA'
-  if (route === 'AA') return (p.role === 'AA') || (level >= 1 && (p.caps.includes('BackupApprover') || isPA(p))) || (level >= 2 && p.role === 'SA')
-  if (route === 'PA') return isPA(p) || (level >= 1 && p.caps.includes('BackupApprover')) || (level >= 2 && p.role === 'SA')
-  if (route === 'MC') return p.role === 'MC' || (level >= 1 && p.role === 'AA')
-  return isPA(p) || p.role === 'SA' || aa && false
+  const aa = hasRole(p, 'AA') || hasRole(p, 'SA')
+  if (route === 'AA') return (hasRole(p, 'AA')) || (level >= 1 && (p.caps.includes('BackupApprover') || isPA(p))) || (level >= 2 && hasRole(p, 'SA'))
+  if (route === 'PA') return isPA(p) || (level >= 1 && p.caps.includes('BackupApprover')) || (level >= 2 && hasRole(p, 'SA'))
+  if (route === 'MC') return hasRole(p, 'MC') || (level >= 1 && hasRole(p, 'AA'))
+  return isPA(p) || hasRole(p, 'SA') || aa && false
 }
 
 /** One approval inbox pattern across all modules (D-95): route, current approver, SLA, reminders, escalation, and why you can't approve. */
@@ -46,7 +47,7 @@ export function approvalInbox(s: State, p: Persona, now: number): ApprovalItem[]
     const urgent = (Date.parse(q.arrival) - now) / 86400000 <= cfg.slaBusinessDays + 1
     let mine = roleCanAct(p, 'AA', clk.level), why: string | undefined
     if (self(q.staffId)) { mine = false; why = 'You can’t approve your own request. Auto-routed to an independent approver (backup, then Policy Approver)' }
-    else if (!mine) why = p.role === 'AA' ? undefined : 'Only an Accommodation Admin decides standard requests'
+    else if (!mine) why = hasRole(p, 'AA') ? undefined : 'Only an Accommodation Admin decides standard requests'
     items.push({ key: q.id, kind: 'Request', ref: q.id, title: `${staff.name}: accommodation request`, sub: `${q.stayType} · arrives ${q.arrival} · ${staff.dept}${q.onBehalf ? ' · entered by Reception' : ''}`, createdAt: q.createdAt, primary: 'Accommodation Admin', backup: 'Policy Approver',
       current: self(q.staffId) ? 'Backup approver → Policy Approver (self-approval blocked)' : levelName(clk.level, 'Accommodation Admin', 'Policy Approver'), level: clk.level, reminders: clk.reminders, label: clk.label, mine, why, urgent })
   }
@@ -73,9 +74,9 @@ export function approvalInbox(s: State, p: Persona, now: number): ApprovalItem[]
     const staff = staffById(s, m.staffId)!
     const cur = m.escalation === 0 ? (m.approverRole === 'AA' ? 'Accommodation Admin' : 'Policy Approver') : m.escalation === 1 ? 'Backup approver' : 'Policy Approver / Super Admin'
     let mine: boolean
-    if (m.escalation === 0) mine = m.approverRole === 'AA' ? p.role === 'AA' : isPA(p)
+    if (m.escalation === 0) mine = m.approverRole === 'AA' ? hasRole(p, 'AA') : isPA(p)
     else if (m.escalation === 1) mine = p.caps.includes('BackupApprover') || isPA(p)
-    else mine = isPA(p) || p.role === 'SA'
+    else mine = isPA(p) || hasRole(p, 'SA')
     let why: string | undefined
     if (p.id === m.initiatorId || self(m.staffId)) { mine = false; why = 'You initiated this emergency check-in. The approver must be someone else' }
     else if (!mine) why = `Currently routed to ${cur}`
@@ -83,13 +84,19 @@ export function approvalInbox(s: State, p: Persona, now: number): ApprovalItem[]
       level: m.escalation, reminders: m.reminders, label: m.escalation === 2 ? 'Critical' : m.escalation === 1 ? 'Escalated' : m.reminders ? 'Reminded' : 'Within 24h', mine, why, urgent: true, deadline: m.createdAt + cfg.emergencyDeadlineHours * 3600_000 * (m.reminders + 1) })
   }
   if (s.migration?.status === 'Prepared') {
-    const mine = isPA(p) || p.role === 'SA'
+    const mine = isPA(p) || hasRole(p, 'SA')
     items.push({ key: s.migration.id, kind: 'Migration', ref: s.migration.id, title: 'Import Current Occupancy: sign-off', sub: `${s.migration.rows.filter(r => !r.error).length} valid rows prepared by ${s.migration.preparedBy}`, createdAt: Date.parse(today() + 'T00:00:00Z'), primary: 'Policy Approver / SA', backup: 'Second SA', current: 'Policy Approver / SA (checker)', level: 0, reminders: 0, label: 'Awaiting checker', mine: mine && s.migration.preparedBy !== p.name, why: mine ? 'The maker can’t be the checker' : 'Only a Policy Approver or Super Admin signs off' })
   }
   for (const w of s.workOrders.filter(x => x.status === 'Resolved')) {
     const bed = bedById(s, w.bedId)!
-    const mine = (p.role === 'MC' || p.role === 'AA') && w.resolvedBy !== p.staffId
+    const mine = (hasRole(p, 'MC') || hasRole(p, 'AA')) && w.resolvedBy !== p.staffId
     items.push({ key: w.id, kind: 'Work order', ref: w.id, title: `Verify: ${w.title}`, sub: `${bed.code} · resolved by ${staffById(s, w.resolvedBy)?.name ?? w.resolvedBy}`, createdAt: w.createdAt, primary: 'Maintenance Coordinator', backup: 'Accommodation Admin', current: 'Maintenance Coordinator', level: 0, reminders: 0, label: 'Resolved ≠ Verified', mine, why: mine ? undefined : 'An independent verifier signs off: the person who resolved it can’t' })
+  }
+  for (const c of s.changes.filter(x => x.status === 'Pending')) {
+    const target = PERSONAS.find(x => x.id === c.targetPersonaId)
+    const mine = hasRole(p, 'SA') && c.requestedByPersonaId !== p.id && c.targetPersonaId !== p.id
+    items.push({ key: c.id, kind: 'Permission', ref: c.id, title: `${target?.name}: ${c.kind} ${c.cap ?? c.role ?? 'scope'}`, sub: `${c.reason}${c.expires ? ` · until ${c.expires}` : ''} · requested by ${c.requestedBy}`, createdAt: c.at, primary: 'Independent Super Admin', backup: 'Second SA / governance approver', current: 'A Super Admin other than the requester (maker-checker)', level: 0, reminders: 0, label: 'Awaiting checker', mine,
+      why: mine ? undefined : hasRole(p, 'SA') ? (c.targetPersonaId === p.id ? 'This change is about your own access' : 'You requested this change: a second Super Admin must approve') : 'Only a Super Admin can approve permission changes' })
   }
   return items.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent) || b.level - a.level || a.createdAt - b.createdAt)
 }
@@ -100,7 +107,7 @@ export function myStatus(s: State, staffId: string) {
   const offer = s.offers.find(o => o.staffId === staffId && o.status === 'Pending')
   const entry = s.waitlist.find(w => w.staffId === staffId && w.status !== 'Closed')
   const res = s.reservations.find(r => r.staffId === staffId && r.status === 'Reserved')
-  const req = s.requests.find(r => r.staffId === staffId && r.status === 'Submitted')
+  const req = s.requests.find(r => r.staffId === staffId && (r.status === 'Submitted' || r.status === 'ChangesRequested'))
   const status = stay ? (stay.checkoutRequested ? 'checking-out' : 'staying') : offer ? 'offered' : res ? 'reserved' : entry ? 'waitlisted' : req ? 'applied' : 'none'
   return { status, stay, offer, entry, res, req } as const
 }
