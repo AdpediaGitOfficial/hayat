@@ -3,7 +3,7 @@
  * Done or Waived by the Policy Approver, D-41) and while the person still has a stay that was not checked out; never a second profile.
  */
 import { afterAll, describe, expect, it } from 'vitest'
-import { admin, call, closeAll, PASSWORD, signIn } from '../harness'
+import { admin, call, closeAll, PASSWORD } from '../harness'
 import { POST as loginRoute } from '../../../app/api/v1/auth/login/route'
 import { POST as createStaffRoute } from '../../../app/api/v1/staff/route'
 import { POST as rehireRoute } from '../../../app/api/v1/exit/rehire/route'
@@ -201,7 +201,6 @@ describe('rehire rules', () => {
     expect(res.message).toMatch(/Profile reactivated; account still disabled, retry from Users & access/)
     expect(await staffRow(r.staffId)).toMatchObject({ employment_status: 'active' })
     expect((await accountRow(r.user.id)).status).toBe('revoked')
-    void signIn
   })
 
   it('a person without a login account is simply reactivated (account: none)', async () => {

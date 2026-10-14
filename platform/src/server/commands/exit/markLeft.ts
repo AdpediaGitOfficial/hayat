@@ -142,7 +142,6 @@ export async function markLeftIn(c: CommandContext, i: MarkLeftInput, o: { passw
   }
 
   // 8. the stay and the bed are NOT touched. Reservations that have not started are cancelled and their claims released (D-36).
-  const stay = await exitStay(c.tx, p.staffId, true)
   const cascade: CascadeCounts = {
     offersWithdrawn: 0, waitlistEntriesClosed: 0, requestsCancelled: 0, reservationsCancelled: 0, transfersCancelled: 0,
     extensionsCancelled: 0, checkoutRequestsCancelled: 0, emergencyConverted: 0, other: [],
@@ -157,6 +156,8 @@ export async function markLeftIn(c: CommandContext, i: MarkLeftInput, o: { passw
     })
     cascade.reservationsCancelled++
   }
+  // The stay is read AFTER the reservations are locked: a check-in that was racing us has committed by now and its stay is seen here.
+  const stay = await exitStay(c.tx, p.staffId, true)
 
   // 9. waitlist: the offer is withdrawn (its hold released, the next in line told), then the entry closed
   cascade.offersWithdrawn = await withdrawOffersForStaff(c, p.staffId, why)

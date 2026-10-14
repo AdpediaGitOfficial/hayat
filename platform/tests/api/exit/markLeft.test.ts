@@ -9,9 +9,10 @@ import { GET as meRoute } from '../../../app/api/v1/auth/me/route'
 import { POST as markLeftRoute } from '../../../app/api/v1/exit/route'
 import { markLeft, type MarkLeftOut } from '@/server/commands/exit/markLeft'
 import { rcFor } from '../rc'
+import { checkIn } from '@/server/commands/stays/checkIn'
 import { initiateEmergency } from '@/server/commands/emergency/initiate'
 import {
-  accountRow, auditFor, bedState, busyResident, caseOf, claimRow, clockAt, eventsOf, itemsOf, liveSessions, mkItem, notifs, resident, snapshot, staffRow, status, stayRow, who, world,
+  accountRow, auditFor, bedState, busyResident, caseOf, claimRow, clockAt, eventsOf, itemsOf, liveSessions, mkItem, mkReservation, notifs, resident, snapshot, staffRow, status, stayRow, who, world,
 } from './helpers'
 
 afterAll(closeAll)
@@ -235,6 +236,34 @@ describe('repeat calls and concurrent calls', () => {
     expect([x.ok, y.ok].filter(Boolean)).toHaveLength(1)
     expect(await caseOf(r.staffId)).toHaveLength(1)
     expect((await auditFor(r.staffId)).filter(a => a.action === 'exit.staff.marked_left')).toHaveLength(1)
+  })
+})
+
+describe('Mark as Left racing a check-in', () => {
+  it('either the check-in wins (the stay is on the case, still active) or Mark as Left wins (the reservation is cancelled and check-in refused): never a stay nobody knows about', async () => {
+    for (let round = 0; round < 5; round++) {
+      const w = await world()
+      const person = await resident()
+      const rsv = await mkReservation({ bedId: w.bedIds[0], staffId: person.staffId, from: '2026-10-14', to: null })
+      const [inn, left] = await Promise.all([
+        checkIn(w.rec.rc(), { reservationId: rsv.reservationId }),
+        markLeft(w.aa.rc(), input(person.staffId)),
+      ])
+      expect(left.ok, JSON.stringify(left)).toBe(true)
+      const k = (await caseOf(person.staffId))[0]
+      const stays = (await admin().query<{ id: string; status: string }>(`SELECT id, status FROM stay WHERE staff_id = $1`, [person.staffId])).rows
+      if (inn.ok) {
+        expect(stays).toHaveLength(1)
+        expect(k.stay_id).toBe(stays[0].id) // the case knows about the stay: flagged, not released
+        expect(stays[0].status).toBe('active')
+        expect(await bedState(w.bedIds[0])).toBe('occupied')
+      } else {
+        expect(stays).toHaveLength(0)
+        expect(k.stay_id).toBeNull()
+        expect(await status('reservation', rsv.reservationId)).toBe('cancelled')
+        expect(await bedState(w.bedIds[0])).toBe('available')
+      }
+    }
   })
 })
 

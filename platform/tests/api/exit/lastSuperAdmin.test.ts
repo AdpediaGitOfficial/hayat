@@ -9,7 +9,13 @@ import { systemClock } from '@/server/clock'
 import type { RequestContext } from '@/server/command/context'
 
 const iso = await createIsolated()
-afterAll(() => iso.close())
+afterAll(async () => {
+  // pg-pool's end() resolves before the sockets are closed, and close() then drops the database WITH (FORCE): wait for the sockets first,
+  // or the dying connections raise "terminating connection" as an unhandled error (a race in tests/api/access/isolated.ts).
+  const end = iso.admin.end.bind(iso.admin)
+  iso.admin.end = (async () => { await end(); await new Promise(r => setTimeout(r, 250)) }) as typeof iso.admin.end
+  await iso.close()
+})
 beforeEach(async () => { useClock(); await iso.retireSuperAdmins() })
 
 type U = Awaited<ReturnType<typeof iso.makeUser>>
