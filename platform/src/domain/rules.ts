@@ -48,7 +48,8 @@ export function eligibility(s: State, staff: Staff, bed: Bed): Eligibility {
 /* ---------------- overlap: the bed is the allocation unit ---------------- */
 /** Inclusive date window as 'YYYY-MM-DD' strings; no `to` means open-ended. The database twin is bed_claim.period. */
 export type Window = { from: string; to?: string }
-export const overlaps = (a: Window, b: Window) => (!a.to || b.from <= a.to) && (!b.to || a.from <= b.to)
+// D-103: `to` is the departure day (exclusive), so back-to-back stays on the same day do not conflict.
+export const overlaps = (a: Window, b: Window) => (!a.to || b.from < a.to) && (!b.to || a.from < b.to)
 
 export function bedConflict(s: State, bedId: string, w: Window, ignore: { reservationId?: string; stayId?: string } = {}) {
   const st = s.stays.find(x => x.bedId === bedId && x.status === 'Active' && x.id !== ignore.stayId && overlaps(w, { from: x.start, to: x.end }))

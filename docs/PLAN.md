@@ -274,7 +274,7 @@ Deviations from section 5: claims have a `released_at` (a released claim stays a
 
 | # | Question | Recommendation |
 |---|---|---|
-| S-1 | **Does a stay's end date mean the last night or the departure day?** As stored (`[start, end+1)`), a stay ending 14 Oct conflicts with one arriving 14 Oct, which clashes with same-day turnover (D-18). | Treat the end date as the **departure day** (end-exclusive) and say so in the specification; same-day turnover then works. Needs Grand Hyatt to confirm. |
+| S-1 | ~~Does a stay's end date mean the last night or the departure day?~~ | **Decided, D-103:** the departure day (end-exclusive); claims are `[arrival, departure)`. Same-day turnover works. Grand Hyatt still to confirm in the sign-off register. |
 | S-2 | How does "Resident base role + operational role" become one actor? | One actor per mode ("My stay" / "My work"), as D-96 suggests. |
 | S-3 | Five starred cells in `PERMISSIONS.md` name no capability (AA Visitors, Res Visitors, AA Audit log, AA System configuration, Mgr export). | Left denied; Report Export is now proposed for Mgr (SPEC-AMENDMENTS). Others need an answer. |
 | S-4 | SA is "Full" on Requests but D-25 says SA should not decide exceptions. | Exceptions and clearance waivers stay Policy Approver only. |

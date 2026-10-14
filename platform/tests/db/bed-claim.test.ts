@@ -35,18 +35,24 @@ describe('bed_claim: a bed never has two overlapping live claims', () => {
     expect(await pgError(newClaim(pool, bedId, '[2026-11-05,2026-11-15)', 'stay'))).toMatchObject({ code: EXCLUSION_VIOLATION })
   })
 
-  it('allows adjacent periods: one stay ends 10 Nov (inclusive), the next starts 11 Nov', async () => {
+  it('allows same-day turnover (D-103): one stay departs 10 Nov, the next arrives 10 Nov', async () => {
     const { bedId } = await newBed(pool)
     await newClaim(pool, bedId, claimPeriod('2026-11-01', '2026-11-10'))
-    await newClaim(pool, bedId, claimPeriod('2026-11-11', '2026-11-20'))
+    await newClaim(pool, bedId, claimPeriod('2026-11-10', '2026-11-20'))
     const { n } = await one<{ n: string }>(pool, `SELECT count(*) AS n FROM bed_claim WHERE bed_id = $1`, [bedId])
     expect(Number(n)).toBe(2)
   })
 
-  it('treats a shared last day as a conflict (inclusive end dates)', async () => {
+  it('treats a shared night as a conflict: arriving the day before the other departs', async () => {
     const { bedId } = await newBed(pool)
     await newClaim(pool, bedId, claimPeriod('2026-11-01', '2026-11-10'))
-    expect((await pgError(newClaim(pool, bedId, claimPeriod('2026-11-10', '2026-11-20'))))).toMatchObject({ code: EXCLUSION_VIOLATION })
+    expect((await pgError(newClaim(pool, bedId, claimPeriod('2026-11-09', '2026-11-20'))))).toMatchObject({ code: EXCLUSION_VIOLATION })
+  })
+
+  it('rejects an empty period (departure on or before arrival)', async () => {
+    const { bedId } = await newBed(pool)
+    expect((await pgError(newClaim(pool, bedId, '[2026-11-10,2026-11-10)'))).code).toBe('23514')
+    expect(() => claimPeriod('2026-11-10', '2026-11-10')).toThrow()
   })
 
   it('allows the same dates on a different bed', async () => {
@@ -190,7 +196,7 @@ describe('the domain overlap rule and the database constraint agree', () => {
     const base = '2026-11-10'
     const windows: { from: string; to?: string }[] = []
     for (const f of [-3, 0, 2, 5]) {
-      for (const len of [0, 1, 4, undefined]) {
+      for (const len of [1, 3, 7, undefined]) {
         const from = addDays(base, f)
         windows.push({ from, to: len === undefined ? undefined : addDays(from, len) })
       }

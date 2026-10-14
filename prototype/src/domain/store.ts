@@ -28,7 +28,7 @@ const base = {
       const e = guard(own ? null : deny(actor, 'request.submit', 'submit requests on behalf of staff'))
       if (e) return e
       if (!f.end) return fail('A planned end date is required for standard stays (D-54)', 'Requester', 'Enter the planned end date')
-      if (f.end < f.arrival) return fail('The end date is before the arrival date')
+      if (f.end <= f.arrival) return fail('The departure date must be after the arrival date (D-103)')
       if (staff.status !== 'Active') return fail(`${staff.name} has left the organisation and can't request accommodation`, 'Accommodation Admin', 'Reactivate via authorised rehire first')
       if (activeStayOfStaff(d, staff.id) || openReservationOfStaff(d, staff.id)) return fail(`${staff.name} already has a stay or reservation`, 'Accommodation Admin', 'Use transfer or extension instead')
       if (d.requests.some(r => r.staffId === staff.id && (r.status === 'Submitted' || r.status === 'ChangesRequested'))) return fail(`${staff.name} already has an open request`, 'Accommodation Admin', 'Decide the existing request first')

@@ -117,14 +117,15 @@ export function eligibility(s: State, staff: Staff, bed: Bed): Eligibility {
 
 /* ---------------- overlap: the bed is the allocation unit ---------------- */
 type Window = { from: string; to?: string }
-const overlaps = (a: Window, b: Window) => (!a.to || b.from <= a.to) && (!b.to || a.from <= b.to)
+// D-103: `to` is the departure day (exclusive): a resident can leave on 14 Oct and the next arrive the same day.
+const overlaps = (a: Window, b: Window) => (!a.to || b.from < a.to) && (!b.to || a.from < b.to)
 export function bedConflict(s: State, bedId: string, w: Window, ignore: { reservationId?: string; stayId?: string } = {}) {
   const st = s.stays.find(x => x.bedId === bedId && x.status === 'Active' && x.id !== ignore.stayId && overlaps(w, { from: x.start, to: x.end }))
   if (st) return { kind: 'stay' as const, stay: st, who: staffById(s, st.staffId)?.name ?? 'someone' }
   const rs = s.reservations.find(x => x.bedId === bedId && x.status === 'Reserved' && x.id !== ignore.reservationId && overlaps(w, { from: x.from, to: x.to }))
   if (rs) return { kind: 'reservation' as const, reservation: rs, who: staffById(s, rs.staffId)?.name ?? 'someone' }
   // date-ranged blocks (repair, safety, …) keep a bed out of use for the dates they cover
-  const blk = (s.beds.find(b => b.id === bedId)?.blocks ?? []).find(k => overlaps(w, { from: k.from, to: k.to }))
+  const blk = (s.beds.find(b => b.id === bedId)?.blocks ?? []).find(k => overlaps(w, { from: k.from, to: k.to ? addDays(k.to, 1) : undefined }))   // a block's "until" is the last blocked day
   if (blk) return { kind: 'block' as const, who: `${blk.reason} (${blk.from} to ${blk.to ?? 'further notice'})` }
   return null
 }

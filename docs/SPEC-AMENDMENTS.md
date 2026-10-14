@@ -16,6 +16,7 @@ Source for the merge of the decision log into the specification. Each row replac
 | C-8 | §4.1 | Delete the 30-day restore and Super Admin hard-delete text. "No deletion of any kind (D-40). An audited anonymisation procedure is added only if Grand Hyatt legal requires one (G-27)." |
 | C-9 | §3.1 | Capability list: Housekeeping, Final Inspection, Emergency Check-in, Building Creation, Night Keys, Backup Approver, Policy Approver, Outage Export, Staff Master / HR, Report Export. Remove key, inventory and facility supervisors (D-11, G-24). |
 | C-10 | §5.3 step 14 | Delete "if any". "No request category is auto-approved in Phase 1 (D-45)." |
+| D-103 | §4 data model, §5.3, §5.4, §6 | "Reservation and stay dates are arrival day and **departure day** (end-exclusive). A bed is held for the nights from arrival up to the departure day, so same-day turnover is allowed and two claims overlap only if they share a night." Bed blocks use the last blocked day. |
 | — | §20 Housekeeping row, AA column | "Mark ready" becomes "Mark ready, with the Final Inspection capability (D-24)". |
 
 ## B. New text the gap analysis calls for (proposed defaults, pending confirmation)

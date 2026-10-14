@@ -189,6 +189,7 @@ Full table: `APPROVALS.md`.
 | D-100 | A clickable prototype is a demo: no production database, auth enforcement or real notifications. | DECIDED |
 | D-101 | **Web stack: Next.js (App Router) + React + TypeScript.** The clickable prototype is built on it and the production web app continues on the same stack, so screens, components and domain rules carry over. Server-side permission checks, auth and APIs (Stage 1) will live in Next.js route handlers or server actions. Switched from Vite + React on 14 Oct 2026. Database is decided in D-102; backend hosting remains for Stage 1. | DECIDED |
 | D-102 | **Database: PostgreSQL.** Chosen so the "no double allocation" rule is enforced by a database constraint, with real transactions and row locks. Hosting, authentication library, job queue and email provider are not decided by this item (see `PLAN.md` T-2 to T-10). Decided 14 Oct 2026. | DECIDED |
+| D-103 | **A stay's or reservation's end date is the departure day (end-exclusive).** The bed is held from the arrival day up to, but not including, the departure day, so one resident can leave on 14 Oct and the next arrive the same day. Two stays overlap only if they share a night. Bed blocks use the last blocked day instead ("until"). Decided 14 Oct 2026 (resolves S-1). | DECIDED |
 
 ---
 

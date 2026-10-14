@@ -4,7 +4,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { A, getState, resetState } from '../src/domain/store'
 import { PERSONAS } from '../src/roles'
-import { jump, DAY, HOUR, today } from '../src/domain/time'
+import { jump, DAY, HOUR, today, addDays as addDaysStr } from '../src/domain/time'
 import { bedConflict, suggestBeds } from '../src/domain/rules'
 
 const P = (id: string) => PERSONAS.find(p => p.id === id)!
@@ -306,4 +306,14 @@ test('AT-030 idempotency: repeating an approval or a check-in creates no duplica
   assert.equal(A.checkIn(rec, res.id, { idVerified: true, keyIssued: true }).ok, true)
   assert.equal(A.checkIn(rec, res.id, { idVerified: true, keyIssued: true }).ok, false)
   assert.equal(S().stays.filter(s => s.staffId === 'E1012' && s.status === 'Active').length, 1)
+})
+
+test('D-103 same-day turnover: a reservation may start on the day the current stay departs, but not the night before', () => {
+  const tom = S().stays.find(s => s.staffId === 'E1040')!        // departs T+40
+  const tomBed = S().beds.find(b => b.id === tom.bedId)!
+  // arrival the day BEFORE departure shares a night → refused
+  const bad = suggestBeds(S(), staff('E1030'), { from: tom.end!, to: '2027-06-01' }, aa.sites).some(b => b.id === tomBed.id)
+  assert.equal(bad, true, 'arriving on the departure day is allowed')
+  const worse = suggestBeds(S(), staff('E1030'), { from: addDaysStr(tom.end!, -1), to: '2027-06-01' }, aa.sites).some(b => b.id === tomBed.id)
+  assert.equal(worse, false, 'arriving the night before the departure conflicts')
 })

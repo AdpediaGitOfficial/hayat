@@ -126,7 +126,7 @@ export const accessActions = {
       const q = d.requests.find(x => x.id === requestId)
       if (!q || q.status !== 'ChangesRequested') return fail('Only a request returned for changes can be resubmitted')
       if (actor.staffId !== q.staffId && !hasRole(actor, 'AA') && !hasRole(actor, 'Rec')) return fail('Only the requester can resubmit')
-      if (!f.end || f.end < f.arrival) return fail('Check the dates: the end date must be after arrival', 'Requester', 'Fix the dates')
+      if (!f.end || f.end <= f.arrival) return fail('Check the dates: the departure date must be after arrival', 'Requester', 'Fix the dates')
       ;(q.revisions ??= []).push({ at: nowMs(), arrival: q.arrival, end: q.end, note: q.note, by: actor.name })
       q.arrival = f.arrival; q.end = f.end; q.note = f.note; q.status = 'Submitted'; q.changeNote = undefined; q.createdAt = nowMs()
       log(d, actor, 'Request resubmitted', `${fullName(d, q.staffId)} · revision ${q.revisions.length + 1}`)

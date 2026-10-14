@@ -7,28 +7,34 @@ import { DAY, HOUR } from '@/domain/time'
 import { FixedClock } from '@/server/clock'
 import { CFG, bed, persona, reservation, staff, stay, world } from './fixtures'
 
-describe('overlaps (inclusive windows, no `to` = open-ended)', () => {
+describe('overlaps (D-103: `to` is the departure day, exclusive; no `to` = open-ended)', () => {
   const w = (from: string, to?: string) => ({ from, to })
-  it('detects a shared day, including the boundary days', () => {
-    expect(overlaps(w('2026-11-01', '2026-11-10'), w('2026-11-10', '2026-11-20'))).toBe(true)
+  it('detects a shared night', () => {
+    expect(overlaps(w('2026-11-01', '2026-11-10'), w('2026-11-09', '2026-11-20'))).toBe(true)
     expect(overlaps(w('2026-11-01', '2026-11-10'), w('2026-11-05', '2026-11-06'))).toBe(true)
   })
-  it('allows back-to-back windows', () => {
+  it('allows same-day turnover and back-to-back windows', () => {
+    expect(overlaps(w('2026-11-01', '2026-11-10'), w('2026-11-10', '2026-11-20'))).toBe(false)
+    expect(overlaps(w('2026-11-10', '2026-11-20'), w('2026-11-01', '2026-11-10'))).toBe(false)
     expect(overlaps(w('2026-11-01', '2026-11-10'), w('2026-11-11', '2026-11-20'))).toBe(false)
-    expect(overlaps(w('2026-11-11', '2026-11-20'), w('2026-11-01', '2026-11-10'))).toBe(false)
   })
-  it('an open-ended window overlaps everything that ends on or after it starts', () => {
+  it('an open-ended window overlaps everything that departs after it starts', () => {
     expect(overlaps(w('2026-11-01'), w('2030-01-01', '2030-01-02'))).toBe(true)
     expect(overlaps(w('2026-11-01'), w('2026-10-01', '2026-10-31'))).toBe(false)
-    expect(overlaps(w('2026-11-01'), w('2026-10-01', '2026-11-01'))).toBe(true)
+    expect(overlaps(w('2026-11-01'), w('2026-10-01', '2026-11-01'))).toBe(false)   // departs the day it arrives
+    expect(overlaps(w('2026-11-01'), w('2026-10-01', '2026-11-02'))).toBe(true)
     expect(overlaps(w('2026-11-01'), w('2027-01-01'))).toBe(true)
   })
 })
 
 describe('claimPeriod (the database form of a window)', () => {
-  it('is half-open: end + 1 day, so an inclusive end date still blocks its own last night', () => {
-    expect(claimPeriod('2026-11-01', '2026-11-10')).toBe('[2026-11-01,2026-11-11)')
-    expect(claimPeriod('2026-12-31', '2027-01-01')).toBe('[2026-12-31,2027-01-02)')
+  it('is half-open [arrival, departure): the departure day is free for the next resident (D-103)', () => {
+    expect(claimPeriod('2026-11-01', '2026-11-10')).toBe('[2026-11-01,2026-11-10)')
+    expect(claimPeriod('2026-12-31', '2027-01-01')).toBe('[2026-12-31,2027-01-01)')
+  })
+  it('refuses a departure on or before arrival', () => {
+    expect(() => claimPeriod('2026-11-10', '2026-11-10')).toThrow()
+    expect(() => claimPeriod('2026-11-10', '2026-11-09')).toThrow()
   })
   it('has no upper bound for an open-ended stay', () => {
     expect(claimPeriod('2026-11-01')).toBe('[2026-11-01,)')
