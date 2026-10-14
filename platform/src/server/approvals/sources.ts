@@ -6,6 +6,7 @@
 // <<< WP-D approval sources
 
 // >>> WP-E approval sources (waitlist priority, renewal)
+import '../commands/waitlist/source'
 // <<< WP-E approval sources
 
 // >>> WP-F approval sources (transfers, swaps, extensions)
