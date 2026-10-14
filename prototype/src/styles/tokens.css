@@ -1,0 +1,39 @@
+/* Grand Hyatt design system tokens (docs/design/GrandHyatt-Design-System.html) */
+:root, :root[data-theme='light'] {
+  --bg:#f6f4f3; --bg-glow:#f1dde0; --bg-glow-2:#ece6dc;
+  --glass:rgba(255,255,255,.74); --glass-strong:rgba(255,255,255,.92); --glass-subtle:rgba(28,24,26,.03);
+  --glass-border:rgba(255,255,255,.9); --line:rgba(28,24,26,.08); --line-strong:rgba(29,26,27,.22); --border:#e4dfdd;
+  --ink:#1d1a1b; --ink-muted:#615859; --ink-subtle:#8a8183; --ink-inverse:#fff;
+  --brand:#c42737; --brand-fill:#c42737; --brand-fill-hover:#a01f2d; --brand-soft:#fae6e8; --brand-strong:#a01f2d;
+  --champagne:#b08d57; --champagne-soft:#f3ead9;
+  --sidebar:#1c1719; --sidebar-muted:#b8acae; --sidebar-active:rgba(255,255,255,.10);
+  --success:#1d7349; --success-soft:#e2f2ea; --warning:#9a5800; --warning-soft:#fbefd9;
+  --danger:#b42318; --danger-soft:#fbe5e2; --info:#2b5c96; --info-soft:#e3ecf7; --neutral-soft:#ece7e6;
+  --focus:rgba(196,39,55,.45);
+  --shadow-xs:0 1px 2px rgba(28,16,20,.06);
+  --shadow-glass:0 1px 2px rgba(28,16,20,.04),0 8px 24px rgba(28,16,20,.05);
+  --shadow-raised:0 12px 32px rgba(28,16,20,.12);
+}
+:root[data-theme='dark'] {
+  --bg:#121011; --bg-glow:#2e1419; --bg-glow-2:#221c16;
+  --glass:rgba(36,30,33,.74); --glass-strong:rgba(40,33,36,.92); --glass-subtle:rgba(255,255,255,.04);
+  --glass-border:rgba(255,255,255,.08); --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.22); --border:#342d30;
+  --ink:#f4efee; --ink-muted:#b3a9aa; --ink-subtle:#8c8284; --ink-inverse:#fff;
+  --brand:#f2707b; --brand-fill:#c42737; --brand-fill-hover:#d43a4b; --brand-soft:#3d1a20; --brand-strong:#f79aa2;
+  --champagne:#d3b47e; --champagne-soft:#2e2518;
+  --sidebar:#0d0a0b; --sidebar-muted:#9a8f91; --sidebar-active:rgba(255,255,255,.08);
+  --success:#62c592; --success-soft:#14301f; --warning:#f0aa4c; --warning-soft:#33240c;
+  --danger:#f47f75; --danger-soft:#3a1814; --info:#86aee3; --info-soft:#162539; --neutral-soft:#2a2426;
+  --focus:rgba(242,112,123,.55);
+  --shadow-xs:0 1px 2px rgba(0,0,0,.40);
+  --shadow-glass:0 1px 2px rgba(0,0,0,.30),0 8px 24px rgba(0,0,0,.35);
+  --shadow-raised:0 12px 32px rgba(0,0,0,.55);
+}
+:root {
+  --radius-xs:4px; --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px; --radius-pill:999px;
+  --blur-sm:8px; --blur-md:20px; --blur-lg:32px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px; --space-12:48px;
+  --font-ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-display:'Jost','Inter',system-ui,sans-serif;
+  --font-mono:'Inter',ui-monospace,monospace;
+}
