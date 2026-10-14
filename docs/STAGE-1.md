@@ -95,10 +95,11 @@ All in numbered migrations, each granting `app_role` only what it needs and neve
 | Package | Status |
 |---|---|
 | D-103 | Done |
-| WP-0 Core | Done: auth and sessions, actor, command framework, audit writer, config registry, route helper, UI kit and shell, seed, API test harness, permission contract test, Playwright smoke |
-| WP-A Property | Not started |
-| WP-B Staff and CSV | Not started |
-| WP-C Access, configuration, audit | Not started |
+| WP-0 Core | Done |
+| WP-A Property | Done: migration 0010, 12 commands, scoped queries, 13 routes, Sites & rooms screens. Not built: room/building blocking, site archive |
+| WP-B Staff and CSV | Done: migration 0020, staff commands and queries by role shape, import preview/confirm/rejected file, screens |
+| WP-C Access, configuration, audit | Done: migration 0030, accounts with one-time temporary credentials, maker-checker role changes and grants, configuration versions, audit viewer. Not built: D-03 re-confirmation, reassigning requests of a deactivated maker |
+| Exit gate (AT-001, 002, 003, 004, 005, 028, 029 + contract test) | See section 10 |
 
 ## 9. Recipe for work packages (WP-0 as built)
 
@@ -113,3 +114,18 @@ Read `platform/README.md` "Stage 1 core" first. A feature is these pieces, in th
 7. **Tests**: API-level tests with `tests/api/harness.ts` (import it first). Name acceptance tests after the SRS ids, e.g. `it('AT-029 archive is blocked with the dependencies listed', ...)`. Cover: the happy path, every refusal path, the audit row, 404 for out-of-scope, 403 for no grant, and one concurrency case where relevant.
 
 Rules that are not negotiable: no deletes; timeouts never decide for a person; nothing OPEN hard-coded (use `getConfig` / the registry, add keys to the registry only if WP-0 owns them: report instead); notification failure never changes business state; end dates are departure days (D-103).
+
+## 10. Exit gate result (14 Oct 2026)
+
+Run on the merged branch against a real PostgreSQL 16, application connected as `app_role`:
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `next lint`, `next build` | clean |
+| Vitest (28 files) | 537 passed, 0 failed |
+| Acceptance tests by name | AT-001, 002, 003, 004, 005, 028, 029 each have API-level tests (`grep -r "AT-0" platform/tests/api`) |
+| Permission contract test | green; every route declares access, every policy-guarded route is checked for every role |
+| Playwright smoke | 11 passed (auth, property, staff, access) |
+| Severity-1 defects | none known |
+
+**Not in Stage 1 (carried forward):** room/building blocking (D-19), site archive, D-03 re-confirmation, reassigning pending requests when a maker is deactivated, a `reply.file` option in `route()` for downloads, a shared `Problem` and `LinkButton` in the UI kit. Open questions S-8 to S-11 in `docs/PLAN.md` need the product owner.

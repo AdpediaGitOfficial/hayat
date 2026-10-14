@@ -1,5 +1,6 @@
 'use client'
 
+import { createPortal } from 'react-dom'
 import { cloneElement, createContext, isValidElement, ReactElement, ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Icon, IconName } from './icons'
 import { fmtDur, useNow } from './time'
@@ -281,28 +282,31 @@ export function Blocked({ why, owner, next }: { why: string; owner?: string; nex
 /* ---------- Drawer / Modal ---------- */
 export function Drawer({ open, onClose, title, subtitle, children, footer }: { open: boolean; onClose: () => void; title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   useEscape(open, onClose)
-  if (!open) return null
-  return (
+  if (!open || typeof document === 'undefined') return null
+  return createPortal(
     <div className="scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
         <div className="dr-head"><div><h1>{title}</h1>{subtitle && <div className="muted">{subtitle}</div>}</div><Button variant="ghost" icon="x" onClick={onClose} aria-label="Close" /></div>
         <div className="dr-body">{children}</div>
         {footer && <div className="dr-foot">{footer}</div>}
       </aside>
-    </div>
+    </div>,
+    document.body,
   )
 }
 export function Modal({ open, onClose, title, subtitle, children, footer, wide }: { open: boolean; onClose: () => void; title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEscape(open, onClose)
-  if (!open) return null
-  return (
+  if (!open || typeof document === 'undefined') return null
+  // Portalled to <body>: .card has a backdrop-filter, which would otherwise clip a fixed-position modal to the card.
+  return createPortal(
     <div className="scrim center" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="dr-head"><div><h1>{title}</h1>{subtitle && <div className="muted">{subtitle}</div>}</div><Button variant="ghost" icon="x" onClick={onClose} aria-label="Close" /></div>
         <div className="dr-body">{children}</div>
         {footer && <div className="dr-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 function useEscape(open: boolean, onClose: () => void) {

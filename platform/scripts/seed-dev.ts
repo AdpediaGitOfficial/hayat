@@ -23,7 +23,7 @@ const SITES = [
   { code: 'MA', name: 'Marina Apartments', kind: 'apartment' },
   { code: 'LV', name: 'Lakeview Residences', kind: 'apartment' },
 ] as const
-const USERS: { employeeId: string; name: string; gender: 'male' | 'female'; roles: { role: Role; sites: 'all' | string[] | 'own' }[]; mustChange?: boolean }[] = [
+const USERS: { employeeId: string; name: string; gender: 'male' | 'female'; roles: { role: Role; sites: 'all' | string[] | 'own' }[]; mustChange?: boolean; noAccount?: boolean }[] = [
   { employeeId: 'E9005', name: 'Vikram Shah', gender: 'male', roles: [{ role: 'SA', sites: 'all' }] },
   { employeeId: 'E9012', name: 'Meghna Rao', gender: 'female', roles: [{ role: 'SA', sites: 'all' }] },
   { employeeId: 'E9001', name: 'Anita Rao', gender: 'female', roles: [{ role: 'AA', sites: ['PV', 'MA'] }] },
@@ -35,6 +35,7 @@ const USERS: { employeeId: string; name: string; gender: 'male' | 'female'; role
   { employeeId: 'E9050', name: 'Arun Pillai', gender: 'male', roles: [{ role: 'Aud', sites: ['PV', 'MA', 'LV'] }] },
   { employeeId: 'E1007', name: 'Rahul Menon', gender: 'male', roles: [{ role: 'Res', sites: 'own' }] },
   { employeeId: 'E1099', name: 'Nisha Thomas (first sign-in)', gender: 'female', roles: [{ role: 'Res', sites: 'own' }], mustChange: true },
+  { employeeId: 'E1200', name: 'Imran Ali (no account yet)', gender: 'male', roles: [], noAccount: true },
   { employeeId: 'E9060', name: 'Priya Iyer (AA and Resident)', gender: 'female', roles: [{ role: 'AA', sites: ['LV'] }, { role: 'Res', sites: 'own' }] },
 ]
 
@@ -53,6 +54,7 @@ try {
     if ((await pool.query(`SELECT 1 FROM staff_profile WHERE lower(btrim(employee_id)) = lower($1)`, [u.employeeId])).rowCount) continue
     const staff = await pool.query<{ id: string }>(
       `INSERT INTO staff_profile (employee_id, full_name, gender, source) VALUES ($1, $2, $3, 'seed') RETURNING id`, [u.employeeId, u.name, u.gender])
+    if (u.noAccount) { created++; continue }
     const acct = await pool.query<{ id: string }>(
       `INSERT INTO user_account (staff_id, username, password_hash, must_change_password, status) VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
       [staff.rows[0].id, u.employeeId, hash, u.mustChange ?? false])
