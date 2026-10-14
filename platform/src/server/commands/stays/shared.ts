@@ -139,6 +139,7 @@ export async function authorizeDecision(c: CommandContext, o: { kind: DecisionKi
   return authorizeEscalated(c, {
     primary: PRIMARY[o.kind], siteId: o.siteId, since: o.since,
     first: o.kind === 'extension_beyond' ? { text: 'a Policy Approver', owner: 'Policy Approver' } : { text: 'the Accommodation Admin', owner: 'Accommodation Admin' },
+    guards: ['approvals_inbox.view', 'transfers_swaps.view'],
   })
 }
 

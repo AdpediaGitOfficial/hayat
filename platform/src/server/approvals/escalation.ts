@@ -92,6 +92,8 @@ export interface AuthorizeEscalated {
   since: Date
   /** Who decides first, in words: 'the Accommodation Admin', 'a Policy Approver'. */
   first: { text: string; owner: string }
+  /** The broader actions that guard the routes which reach this decision: someone who holds one of them but no decision grant reads "not found". */
+  guards?: readonly Action[]
 }
 
 /**
@@ -115,8 +117,17 @@ export async function standingNow(q: Reader, actor: Actor, o: { primary: Action;
  */
 export function noDecisionGrant(actor: Actor, primary: Action | readonly Action[]): Failure | undefined {
   const actions = Array.isArray(primary) ? primary as readonly Action[] : [primary as Action]
-  if ([...actions, BACKUP_ACTION].some(a => decide(actor, a).allowed)) return undefined
-  return decide(actor, 'approvals_inbox.view').allowed ? fail.notFound() : fail.forbidden(`decide this (${actions.join(' or ')})`)
+  return noGrantFor(actor, [...actions, BACKUP_ACTION], ['approvals_inbox.view'], `decide this (${actions.join(' or ')})`)
+}
+
+/**
+ * The general form: the actor holds none of `actions` anywhere. If one of the broader `guards` (the action the route is guarded by) lets them
+ * reach the command, the answer is "not found" for a record that exists and for one that does not; if not, "forbidden", as the route guard says.
+ * Call it BEFORE the record is looked up, so the answer cannot say whether the record exists (AT-002 style).
+ */
+export function noGrantFor(actor: Actor, actions: readonly Action[], guards: readonly Action[], what?: string): Failure | undefined {
+  if (actions.some(a => decide(actor, a).allowed)) return undefined
+  return guards.some(a => decide(actor, a).allowed) ? fail.notFound() : fail.forbidden(what ?? `do this (${actions.join(' or ')})`)
 }
 
 /**
@@ -129,7 +140,12 @@ export async function authorizeEscalated(c: Pick<CommandContext, 'actor' | 'tx' 
   if (s.ok) return undefined
   switch (s.kind) {
     case 'out_of_scope': return fail.notFound()
-    case 'no_grant': return fail.forbidden(`decide this (${o.primary})`)
+    case 'no_grant': {
+      // No grant to decide this kind of item. Someone who can see it at its site is told so (403); someone the route let in for another site
+      // reads "not found", exactly like a record that does not exist (never reveal existence).
+      const seesIt = (o.guards ?? []).some(g => decide(c.actor, g, { siteId: o.siteId }).allowed)
+      return seesIt ? fail.forbidden(`decide this (${o.primary})`) : noGrantFor(c.actor, [], o.guards ?? [], `decide this (${o.primary})`)
+    }
     case 'backup_off':
       return failure('forbidden', `This is waiting for ${o.first.text}. Backup approval by a Policy Approver or Backup Approver is switched off (proposed policy P-01, pending client sign-off)`, {
         owner: o.first.owner, next: 'Ask them to decide, or ask a Super Admin about the backup approval setting',

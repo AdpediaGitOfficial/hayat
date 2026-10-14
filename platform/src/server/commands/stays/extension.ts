@@ -16,7 +16,7 @@ import { runCommand } from '@/server/command/run'
 import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, ok, type Failure, type Result } from '@/server/command/result'
 import { overlappingClaims, setClaimPeriod, suggestBeds, type BedSuggestion } from '@/server/allocation'
-import { noDecisionGrant } from '@/server/approvals/escalation'
+import { noDecisionGrant, noGrantFor } from '@/server/approvals/escalation'
 import { checkEligibility } from '@/server/eligibility'
 import { getConfig } from '@/server/config/registry'
 import { notify } from '@/server/notify'
@@ -55,6 +55,9 @@ const REQUESTERS = ['reservations_stays.request_extension', 'reservations_stays.
 
 export function requestExtension(rc: RequestContext, i: RequestExtensionInput): Promise<Result<RequestExtensionOut>> {
   return runCommand(rc, async c => {
+    // Someone who may never request or approve an extension learns nothing about the stay (a real one and a missing one answer alike).
+    const none = noGrantFor(c.actor, REQUESTERS, ['reservations_stays.view'])
+    if (none) return none
     const s = await loadStayLocked(c.tx, i.stayId)
     if (!s) return fail.notFound()
     const denied = authorizeAny(c, REQUESTERS, { siteId: s.siteId, ownerStaffId: s.staffId })

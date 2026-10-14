@@ -8,6 +8,7 @@ import { fail, ok, type Result } from '@/server/command/result'
 import { notify } from '@/server/notify'
 import { guardUnique } from '@/server/commands/property/shared'
 import { bed } from '@/server/db/schema'
+import { noGrantFor } from '@/server/approvals/escalation'
 import { authorizeAny, dateSchema, idSchema, loadStayLocked, loadStaysLocked, reasonSchema, staffName } from './shared'
 import { checkDestination, checkDestinationSite, checkEligibleAt, consentInput, openTransfersFor, siteNameOf } from './transferShared'
 
@@ -38,6 +39,9 @@ const REQUESTERS = ['transfers_swaps.request', 'transfers_swaps.approve'] as con
 
 export function requestTransfer(rc: RequestContext, i: RequestTransferInput): Promise<Result<RequestTransferOut>> {
   return runCommand<RequestTransferOut>(rc, async c => {
+    // Someone who may never request or approve a transfer learns nothing about the stay (a real one and a missing one answer alike).
+    const none = noGrantFor(c.actor, REQUESTERS, ['reservations_stays.view'])
+    if (none) return none
     const s = await loadStayLocked(c.tx, i.stayId)
     if (!s) return fail.notFound()
     const denied = authorizeAny(c, REQUESTERS, { siteId: s.siteId, ownerStaffId: s.staffId })
