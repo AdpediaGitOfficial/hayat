@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed-dev.ts",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "sweeps": "tsx scripts/sweeps.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

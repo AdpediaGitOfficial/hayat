@@ -100,6 +100,10 @@ Sign-in refuses with one wording whether the username exists or not, and hashes 
 
 **Trusted proxy**: the client address comes from `X-Forwarded-For`/`X-Real-IP`. Run behind a proxy that overwrites those headers; it is used for rate limiting and the audit log only, never for authorization.
 
+## Stage 2 core (allocation, notifications, sweeps, approvals)
+
+`docs/STAGE-2.md` section 10 is the recipe. In short: **`allocateBed()`** (`src/server/allocation`) is the only way a bed gets a claim, and `claims.ts` the only file that writes `bed_claim` (a test enforces it); **`checkEligibility()`** (`src/server/eligibility`) runs the placeholder rules (GH-03 open) with Policy Approver exceptions; **`notify()`** (`src/server/notify`) writes in-app notifications with a unique dedupe key so retries and repeated sweeps notify once; **sweeps** (`src/server/jobs`) drive every timer, run via `npm run sweeps` or `POST /api/v1/internal/sweeps` with `INTERNAL_JOB_TOKEN`, and never decide for a person; **approval sources** (`src/server/approvals`) feed one inbox with SLA clock, escalation and separation-of-duties explanations.
+
 ## What Stage 0 does not contain
 
 Background jobs (pg-boss), notifications, the clearance, key, cleaning, work-order, visitor and incident tables (Stages 2 to 4), the approval and transfer/extension/emergency tables (Stage 2), row-level security (optional second line of defence in PLAN section 6). (Stage 0 had no authentication, commands or screens; the Stage 1 core above adds them. pg-boss is decided, T-8, and arrives with the first background job.)

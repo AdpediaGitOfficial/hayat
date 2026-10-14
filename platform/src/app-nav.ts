@@ -19,6 +19,21 @@ export interface NavItem {
 
 export const NAV: readonly NavItem[] = [
   { id: 'home', label: 'Dashboard', href: '/', icon: 'dashboard', group: '' },
+  // The resident's own accommodation (request, offer, reservation, stay). Residents only: Res is the only role with request_extension.
+  { id: 'my', label: 'My accommodation', href: '/my', icon: 'home', group: '', actions: ['reservations_stays.request_extension'] },
+  { id: 'notifications', label: 'Notifications', href: '/notifications', icon: 'bell', group: '' },
+
+  // >>> WP-D nav (requests, approvals)
+  // <<< WP-D nav
+
+  // >>> WP-E nav (waitlist, offers)
+  // <<< WP-E nav
+
+  // >>> WP-F nav (stays, check-in, transfers)
+  // <<< WP-F nav
+
+  // >>> WP-G nav (emergency check-in)
+  // <<< WP-G nav
 
   // >>> WP-A nav (property and inventory)
   // Sites & rooms: anyone who may view sites and buildings (SA, AA, Rec, MC, Sec, Mgr, Aud). Residents, technicians and contractors never see it.

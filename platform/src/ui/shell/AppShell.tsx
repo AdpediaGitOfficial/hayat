@@ -10,11 +10,11 @@ import type { Role } from '@/domain/enums'
 export interface ShellNavItem { id: string; label: string; href: string; icon: IconName; group: string }
 export interface ShellUser { name: string; role: Role; modes: Role[]; capabilityLabels: string[] }
 
-export function AppShell({ user, nav, children }: { user: ShellUser; nav: ShellNavItem[]; children: ReactNode }) {
-  return <ToastHost><Frame user={user} nav={nav}>{children}</Frame></ToastHost>
+export function AppShell({ user, nav, unread = 0, children }: { user: ShellUser; nav: ShellNavItem[]; unread?: number; children: ReactNode }) {
+  return <ToastHost><Frame user={user} nav={nav} unread={unread}>{children}</Frame></ToastHost>
 }
 
-function Frame({ user, nav, children }: { user: ShellUser; nav: ShellNavItem[]; children: ReactNode }) {
+function Frame({ user, nav, unread, children }: { user: ShellUser; nav: ShellNavItem[]; unread: number; children: ReactNode }) {
   const router = useRouter()
   const path = usePathname() ?? '/'
   const toast = useToast()
@@ -74,6 +74,10 @@ function Frame({ user, nav, children }: { user: ShellUser; nav: ShellNavItem[]; 
           <header className="topbar">
             <div className="crumb"><b>{here}</b></div>
             <span className="spacer" />
+            <div style={{ position: 'relative' }}>
+              <Button variant="ghost" icon="bell" aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'} onClick={() => router.push('/notifications')} />
+              {unread > 0 && <span aria-hidden="true" style={{ position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--brand-fill)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center' }}>{unread > 99 ? '99+' : unread}</span>}
+            </div>
             <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
               <Button icon="user" onClick={() => setMenu(!menu)}>{ROLE_LABEL[user.role]}{user.modes.length > 1 && <Icon name="updown" />}</Button>
               {menu && (

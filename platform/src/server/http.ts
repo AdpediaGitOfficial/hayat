@@ -9,7 +9,7 @@
  * Declaring `access` is mandatory, so a route cannot exist without saying who may call it; the permission
  * contract test enumerates registered routes.
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { z, type ZodType } from 'zod'
 import { currentUser } from '@/server/auth/current'
 import { clearedCookie, COOKIE_NAME, readCookie } from '@/server/auth/session'
@@ -20,6 +20,8 @@ import { getClock } from '@/server/runtime'
 
 export type Access =
   | { kind: 'public' }
+  /** Machine callers (a scheduler): `Authorization: Bearer $INTERNAL_JOB_TOKEN`. Disabled (404) when the token is not configured. */
+  | { kind: 'internal' }
   /** Any signed-in user, no module action (own session, own password). */
   | { kind: 'authenticated'; allowMustChange?: boolean }
   /** A policy action; the command still checks the specific record's scope. */
@@ -87,6 +89,13 @@ export function route<S extends ZodType | undefined = undefined>(def: RouteDef<S
       }
       let rc: RequestContext
       if (def.access.kind === 'public') {
+        rc = undefined as unknown as RequestContext
+      } else if (def.access.kind === 'internal') {
+        const expected = process.env.INTERNAL_JOB_TOKEN
+        if (!expected) return respond(fail.notFound(), requestId, [])
+        const given = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
+        const a = createHash('sha256').update(given).digest(), b = createHash('sha256').update(expected).digest()
+        if (!timingSafeEqual(a, b)) return respond(fail.unauthenticated(), requestId, [])
         rc = undefined as unknown as RequestContext
       } else {
         const token = readCookie(req.headers.get('cookie'))

@@ -41,7 +41,7 @@ describe('the configuration screen', () => {
     const open = rows.filter(x => x.status === 'open')
     expect(open.length).toBeGreaterThan(0)
     expect(open.map(x => x.key)).toEqual(expect.arrayContaining(['auth.password_min_length', 'calendar.weekend_days']))
-    expect(rows.find(x => x.key === 'timers.offer_hours')).toMatchObject({ value: 48, source: 'default', version: null, status: 'decided', ref: 'D-52' })
+    expect(rows.find(x => x.key === 'timers.offer_hours')).toMatchObject({ value: 48, source: 'default', version: null, status: 'decided', ref: 'D-49' })
   })
 
   it('only a Super Admin reads or changes it', async () => {
@@ -72,14 +72,14 @@ describe('versioning', () => {
 
     const rows = await versions(key)
     expect(rows.map(r => [r.version, r.value])).toEqual([[1, 36], [2, 60]]) // the first version was not edited
-    expect(rows[0]).toMatchObject({ decision_ref: 'D-52', decision_status: 'decided', reason: 'Pilot: shorter offers' })
+    expect(rows[0]).toMatchObject({ decision_ref: 'D-49', decision_status: 'decided', reason: 'Pilot: shorter offers' })
     expect(rows[0].created_by).toBeTruthy()
 
     const h = await sa.get('config/[key]', { params: { key } })
     expect(h.status).toBe(200)
     expect(h.body.data.versions.map((v: { version: number }) => v.version)).toEqual([2, 1]) // newest first
-    expect(h.body.data.versions[0]).toMatchObject({ value: 60, reason: 'Back to longer offers', decisionRef: 'D-52', valid: true })
-    expect(h.body.data.row).toMatchObject({ key, ref: 'D-52', status: 'decided', default: 48 })
+    expect(h.body.data.versions[0]).toMatchObject({ value: 60, reason: 'Back to longer offers', decisionRef: 'D-49', valid: true })
+    expect(h.body.data.row).toMatchObject({ key, ref: 'D-49', status: 'decided', default: 48 })
 
     const list = (await sa.get('config')).body.data.find((x: { key: string }) => x.key === key)
     expect(list).toMatchObject({ value: 60, source: 'saved', version: 2, reason: 'Back to longer offers' })
@@ -91,7 +91,7 @@ describe('versioning', () => {
     await put(key, { value: 20, reason: 'Second' })
     const ev = (await iso.admin.query(`SELECT action, entity_type, reason, before, after FROM audit_event WHERE action = 'config.changed' AND after->>'key' = $1 ORDER BY seq`, [key])).rows
     expect(ev).toHaveLength(2)
-    expect(ev[0]).toMatchObject({ entity_type: 'config', reason: 'First', before: { key, value: 24, version: null, decisionRef: 'D-54' }, after: { key, value: 30, version: 1, decisionStatus: 'decided' } })
+    expect(ev[0]).toMatchObject({ entity_type: 'config', reason: 'First', before: { key, value: 24, version: null, decisionRef: 'D-58' }, after: { key, value: 30, version: 1, decisionStatus: 'default' } })
     expect(ev[1]).toMatchObject({ reason: 'Second', before: { value: 30, version: 1 }, after: { value: 20, version: 2 } })
   })
 

@@ -7,6 +7,11 @@ import { bigint, boolean, customType, date, integer, jsonb, pgTable, text, times
 import { TABLES_PROPERTY } from './schema.property'
 import { TABLES_STAFF } from './schema.staff'
 import { TABLES_ACCESS } from './schema.access'
+import { TABLES_ALLOC } from './schema.alloc'
+import { TABLES_REQUESTS } from './schema.requests'
+import { TABLES_WAITLIST } from './schema.waitlist'
+import { TABLES_STAYS } from './schema.stays'
+import { TABLES_EMERGENCY } from './schema.emergency'
 import type {
   BedStateDb, Capability, ClaimKind, GrantStatus, OfferStatus, RequestStatus, ReservationStatus, Role, ScopeKind,
   StayStatus, StayTypeDb, WaitlistStatus,
@@ -197,6 +202,7 @@ export const configItem = pgTable('config_item', {
 export const accommodationRequest = pgTable('accommodation_request', {
   id: id(),
   staffId: uuid('staff_id').notNull().references(() => staffProfile.id),
+  siteId: uuid('site_id').notNull().references(() => site.id),
   submittedBy: uuid('submitted_by').references(() => userAccount.id),
   onBehalf: boolean('on_behalf').notNull().default(false),
   arrivalDate: date('arrival_date').notNull(),
@@ -260,6 +266,7 @@ export const stay = pgTable('stay', {
 export const waitlistEntry = pgTable('waitlist_entry', {
   id: id(),
   staffId: uuid('staff_id').notNull().references(() => staffProfile.id),
+  siteId: uuid('site_id').notNull().references(() => site.id),
   requestId: uuid('request_id').references(() => accommodationRequest.id),
   priority: text('priority'),
   queueTs: tz('queue_ts').notNull().defaultNow(),
@@ -308,4 +315,5 @@ export const TABLES = {
   waitlist_entry: waitlistEntry, bed_offer: bedOffer,
   login_attempt: loginAttempt,
   ...TABLES_PROPERTY, ...TABLES_STAFF, ...TABLES_ACCESS,
+  ...TABLES_ALLOC, ...TABLES_REQUESTS, ...TABLES_WAITLIST, ...TABLES_STAYS, ...TABLES_EMERGENCY,
 } as const

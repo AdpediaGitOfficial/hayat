@@ -28,7 +28,7 @@ export type ReservationStatus = (typeof RESERVATION_STATUSES)[number]
 export const CLAIM_KINDS = ['reservation', 'offer_hold', 'stay'] as const
 export type ClaimKind = (typeof CLAIM_KINDS)[number]
 
-export const REQUEST_STATUSES = ['draft', 'submitted', 'pending_approval', 'approved', 'rejected', 'cancelled', 'waitlisted', 'closed'] as const
+export const REQUEST_STATUSES = ['draft', 'submitted', 'pending_approval', 'changes_requested', 'approved', 'rejected', 'cancelled', 'waitlisted', 'closed'] as const
 export type RequestStatus = (typeof REQUEST_STATUSES)[number]
 
 export const OFFER_STATUSES = ['pending', 'accepted', 'declined', 'expired', 'withdrawn'] as const
