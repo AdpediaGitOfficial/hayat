@@ -49,9 +49,12 @@ describe('migration runner', () => {
     expect(second.skipped).toEqual(files.map(f => f.name))
   })
 
-  it('migration files are numbered without gaps and have unique numbers', async () => {
+  // Stage 1 reserves number ranges per work package (0010-0019, 0020-0029, 0030-0039), so gaps are expected.
+  it('migration files have four-digit numbers that are unique and ascending', async () => {
     const names = (await readdir(MIGRATIONS_DIR)).filter(n => n.endsWith('.sql')).sort()
-    names.forEach((n, i) => expect(n.slice(0, 4)).toBe(String(i + 1).padStart(4, '0')))
+    const nums = names.map(n => { expect(n).toMatch(/^\d{4}_[a-z0-9_]+\.sql$/); return Number(n.slice(0, 4)) })
+    expect(new Set(nums).size).toBe(nums.length)
+    expect(nums).toEqual([...nums].sort((a, b) => a - b))
   })
 
   it('a failing migration rolls back completely and records nothing', async () => {
