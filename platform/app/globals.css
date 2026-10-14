@@ -1,0 +1,16 @@
+/* Minimal base. Screens and the component library arrive in later stages (tokens live in src/styles/tokens.css). */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 640px; margin: 0 auto; padding: var(--space-12) var(--space-4); }
+h1 { font-family: var(--font-display); font-weight: 600; margin: 0 0 var(--space-2); }
+p { color: var(--ink-muted); margin: 0 0 var(--space-4); }
+a { color: var(--brand); }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
