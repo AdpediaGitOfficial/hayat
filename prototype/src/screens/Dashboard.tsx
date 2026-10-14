@@ -68,7 +68,7 @@ function AdminHome() {
           <Button variant="primary" icon="plus" onClick={() => go('allocations', { bulk: '1' })}>Allocate bed</Button>
         </>} />
       <div className="grid stats">
-        <StatTile label="Occupancy" value={((occ.occupied / (occ.total || 1)) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, 92.4]} delta={{ text: '2.1 pts', trend: 'up' }} hint="vs last month" onClick={() => go('inventory')} />
+        <StatTile label="Occupancy" value={((occ.occupied / (occ.total || 1)) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, (occ.occupied / (occ.total || 1)) * 100]} delta={{ text: '2.1 pts', trend: 'up' }} hint="vs last month" onClick={() => go('inventory')} />
         <StatTile label="Arrivals today" value={p.arrivals.length + p.checkedInToday.length} icon="login" hint={`${notReadyArrivals.length} not ready`} onClick={() => go('allocations')} />
         <StatTile label="Pending approvals" value={inbox.length} spark={[3, 5, 4, 6, 5, 7, inbox.length]} delta={{ text: '2', trend: 'up', good: false }} hint="vs yesterday" onClick={() => go('approvals')} goodUp={false} />
         <StatTile label="Waitlist" value={s.waitlist.filter(w => w.status !== 'Closed').length} spark={[12, 11, 12, 10, 9, 9, s.waitlist.filter(w => w.status !== 'Closed').length]} delta={{ text: '3', trend: 'down' }} hint="joiners waiting" onClick={() => go('waitlist')} />
@@ -269,7 +269,7 @@ function ManagerHome() {
     <>
       <PageHeader display eyebrow={eyebrow(ROLE_LABEL[persona.role], now)} title={`${greeting(now)}, ${firstName(persona.name)}`} summary="Operational summary. No create, edit or approval rights; export only if granted." />
       <div className="grid stats">
-        <StatTile label="Occupancy" value={((p.occ.occupied / p.occ.total) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, 92.4]} />
+        <StatTile label="Occupancy" value={((p.occ.occupied / p.occ.total) * 100).toFixed(1)} unit="%" spark={[88, 89.5, 90, 89, 91, 90.4, (p.occ.occupied / p.occ.total) * 100]} />
         <StatTile label="Vacant and ready" value={p.beds.filter(b => b.state === 'Available').length} icon="bed" />
         <StatTile label="Waitlist" value={s.waitlist.filter(w => w.status !== 'Closed').length} icon="hourglass" />
         <StatTile label="Overdue stays" value={p.overdue.length} icon="clock" goodUp={false} />

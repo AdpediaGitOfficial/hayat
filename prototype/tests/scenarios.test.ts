@@ -228,8 +228,8 @@ test('migration is maker-checker and creates Migrated stays', () => {
 
 test('no deletion: beds are archived only when nothing depends on them', () => {
   assert.equal(A.archiveBed(aa, bed('PV-V02-R2-B').id).ok, false, 'occupied')
-  assert.equal(A.archiveBed(aa, bed('PV-V01-R3-B').id).ok, true)
-  assert.equal(S().beds.some(b => b.code === 'PV-V01-R3-B'), true, 'record retained')
+  assert.equal(A.archiveBed(aa, bed('PV-V02-R3-A').id).ok, true)
+  assert.equal(S().beds.some(b => b.code === 'PV-V02-R3-A'), true, 'record retained')
 })
 
 test('lost key is never marked returned', () => {
@@ -243,4 +243,10 @@ test('work: resolver cannot verify own work', () => {
   const w = S().workOrders.find(x => x.status === 'Resolved')!
   assert.equal(A.advanceWorkOrder(P('p-tech'), w.id, 'Verified').ok, false)
   assert.equal(A.advanceWorkOrder(P('p-mc'), w.id, 'Verified').ok, true)
+})
+
+test('seed occupancy for the Accommodation Admin headline is 92% (Palm Villas + Marina)', () => {
+  const beds = S().beds.filter(b => aa.sites !== 'all' && aa.sites.includes(b.siteId))
+  const pct = (beds.filter(b => b.state === 'Occupied').length / beds.length) * 100
+  assert.ok(pct >= 91.5 && pct < 93, `occupancy ${pct.toFixed(1)}%`)
 })

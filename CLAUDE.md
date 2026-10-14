@@ -6,7 +6,7 @@ A role-based web platform that manages staff housing from staff record → eligi
 
 ## Read before any work
 
-1. `docs/DECISIONS.md`: **source of truth**. 100 numbered decisions (D-01 to D-100) with status DECIDED / DEFAULT / OPEN. Overrides everything in `docs/source/`.
+1. `docs/DECISIONS.md`: **source of truth**. 101 numbered decisions (D-01 to D-101) with status DECIDED / DEFAULT / OPEN. Overrides everything in `docs/source/`.
 2. `docs/PERMISSIONS.md`: corrected role × module matrix and capabilities.
 3. `docs/APPROVALS.md`: approval routes, escalation and timing.
 4. `docs/source/srs-v1.0.md`: full SRS (data model §4, state transitions §6, acceptance tests AT-001 to AT-032 §16, invariants Appendix B).
@@ -43,7 +43,7 @@ Grand Hyatt red palette, clean modern enterprise UI, glass effects. Error/danger
 
 ## Build plan
 
-**Stack:** Next.js 14 (App Router) + React 18 + TypeScript in `prototype/` (see `prototype/README.md`; `npm run dev`, `npm test`). Design tokens and components follow `docs/design/GrandHyatt-Design-System.html`.
+**Stack (D-101):** Next.js 14 (App Router) + React 18 + TypeScript in `prototype/` (see `prototype/README.md`; `npm run dev`, `npm test`). Design tokens and components follow `docs/design/GrandHyatt-Design-System.html`.
 
 **Step 0 (built, awaiting review): clickable prototype.** Dummy data, no real backend/auth/notifications (D-97 to D-100).
 Prototype flows, in priority order:

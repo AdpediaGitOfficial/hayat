@@ -43,22 +43,23 @@ export function buildSeed(): State {
     for (let i = 0; i < count; i++) beds.push({ id: `${room.id}-${letters[i]}`, code: `${prefix}-${letters[i]}`, roomId: room.id, siteId: siteCode, state: 'Available' })
   }
   // Palm Villas: Site → Building (villa) → Room → Bed (no floor/unit)
-  for (let v = 1; v <= 8; v++) {
-    const b: Building = { id: `PV-V0${v}`, siteId: 'PV', name: `Villa 0${v}` }
+  for (let v = 1; v <= 20; v++) {
+    const vv = String(v).padStart(2, '0')
+    const b: Building = { id: `PV-V${vv}`, siteId: 'PV', name: `Villa ${vv}` }
     buildings.push(b)
-    const g: RoomGender = v <= 4 ? 'Male' : v <= 7 ? 'Female' : 'Any'
+    const g: RoomGender = v <= 4 || (v >= 9 && v <= 14) ? 'Male' : v === 8 ? 'Any' : 'Female'
     ;[4, 3, 3].forEach((cnt, i) => {
-      const r: Room = { id: `PV-V0${v}-R${i + 1}`, siteId: 'PV', buildingId: b.id, name: `Room ${i + 1}`, gender: g }
-      rooms.push(r); mkBeds(r, 'PV', `PV-V0${v}-R${i + 1}`, cnt)
+      const r: Room = { id: `PV-V${vv}-R${i + 1}`, siteId: 'PV', buildingId: b.id, name: `Room ${i + 1}`, gender: g }
+      rooms.push(r); mkBeds(r, 'PV', `PV-V${vv}-R${i + 1}`, cnt)
     })
   }
   // Marina: Site → Building (block) → Floor → Room → Bed
-  for (const blk of ['A', 'B']) {
+  for (const blk of ['A', 'B', 'C', 'D']) {
     const b: Building = { id: `MA-${blk}`, siteId: 'MA', name: `Block ${blk}` }
     buildings.push(b)
     for (const fl of [1, 2]) for (let r = 1; r <= 3; r++) {
       const num = `${fl}0${r}`
-      const room: Room = { id: `MA-${blk}-${num}`, siteId: 'MA', buildingId: b.id, floor: `Floor ${fl}`, name: `Room ${num}`, gender: blk === 'A' ? 'Female' : 'Male' }
+      const room: Room = { id: `MA-${blk}-${num}`, siteId: 'MA', buildingId: b.id, floor: `Floor ${fl}`, name: `Room ${num}`, gender: blk === 'A' || blk === 'C' ? 'Female' : 'Male' }
       rooms.push(room); mkBeds(room, 'MA', `MA-${blk}-F${fl}-${num}`, 2)
     }
   }
@@ -154,21 +155,16 @@ export function buildSeed(): State {
     }
   }
   const nextBeds = beds.filter(b => b.state === 'Available' && !['PV-V05-R1-A', 'PV-V06-R3-C', 'PV-V04-R3-C', 'PV-V06-R1-B', 'PV-V08-R1-B'].includes(b.code))
-  // keep a healthy supply of Available beds for demos (waitlist offers, transfers, allocation conflicts)
-  const keepFree = new Set(['PV-V01-R3-A', 'PV-V01-R3-B', 'PV-V02-R3-A', 'PV-V02-R3-B', 'PV-V05-R3-A', 'PV-V05-R3-B', 'PV-V06-R1-A', 'PV-V07-R1-A', 'PV-V07-R1-B', 'PV-V08-R2-A', 'PV-V08-R2-B', 'MA-B-F1-101-A', 'MA-B-F1-101-B', 'MA-A-F2-201-A', 'LV-R3-A', 'LV-R3-B', 'LV-R2-B'])
+  // Keep a few Available beds for demos (offers, transfers, allocation conflicts, bulk allocation); every other bed is occupied,
+  // which puts the Palm Villas + Marina occupancy headline at about 92%.
+  const keepFree = new Set(['PV-V01-R3-A', 'PV-V02-R3-A', 'PV-V05-R3-A', 'PV-V06-R1-A', 'PV-V07-R1-A', 'PV-V08-R2-A', 'MA-B-F1-101-A', 'MA-A-F2-201-A', 'LV-R3-A', 'LV-R3-B'])
   for (const b of nextBeds) {
     if (keepFree.has(b.code)) continue
     const room = roomOf(b)
     const site = sites.find(s => s.id === b.siteId)!
     const g: Gender = room.gender === 'Any' ? (R() > 0.5 ? 'Male' : 'Female') : room.gender
-    const x = R()
-    if (x < 0.95) {
-      const s = pool(g, site.minGrade)
-      occupy(s, b.code, -Math.floor(30 + R() * 300), Math.floor(R() * 5) === 0 ? 3 + Math.floor(R() * 5) : 40 + Math.floor(R() * 300), (['Permanent', 'Contract', 'Trainee'] as StayType[])[Math.floor(R() * 3)])
-    } else if (x < 0.98) {
-      const s = pool(g, site.minGrade)
-      reserve(s, b.code, 7 + Math.floor(R() * 20), 200, Date.UTC(2026, 9, 21, 14))
-    }
+    const st = pool(g, site.minGrade)
+    occupy(st, b.code, -Math.floor(30 + R() * 300), Math.floor(R() * 25) === 0 ? 3 + Math.floor(R() * 5) : 40 + Math.floor(R() * 300), (['Permanent', 'Contract', 'Trainee'] as StayType[])[Math.floor(R() * 3)])
   }
   // a few overstays (past planned end)
   stays.filter(s => s.source === 'Standard' && s.status === 'Active' && s.end && s.end >= addDays(T, 3) && s.staffId.startsWith('E2')).slice(0, 2).forEach((s, i) => { s.end = addDays(T, -(2 + i * 3)) })
