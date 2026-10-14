@@ -17,12 +17,7 @@ npm run db:migrate              # applies db/migrations/*.sql, safe to re-run
 npm run dev                     # http://localhost:3000   and   http://localhost:3000/api/health
 ```
 
-Everything in one go, with containers (needs a Docker daemon):
-
-```bash
-cp .env.example .env            # set POSTGRES_PASSWORD
-docker compose up --build       # postgres:16, one-shot migration, then the app on :3000
-```
+To run it on a server, see `../docs/DEPLOYMENT.md`.
 
 ### The full local check (what CI runs)
 
@@ -42,6 +37,7 @@ npm ci && npm run typecheck && npm run lint && npm run db:migrate && npm test &&
 | `npm run db:migrate` | Applies pending migrations to `DATABASE_URL` |
 | `npm test` | Vitest: domain, policy, database constraint and HTTP-level API tests (real PostgreSQL) |
 | `npm run db:seed` | Demo sites and one user per role (username = employee ID; password `Welcome-GH-2026` or `SEED_PASSWORD`). Refuses to run in production |
+| `npm run db:first-admin` | Creates the first Super Admin on a new installation (env: `ADMIN_EMPLOYEE_ID`, `ADMIN_NAME`, `ADMIN_PASSWORD`; owner role; refuses if one exists) |
 | `npm run e2e` | Playwright browser smoke tests. `npm run build` first; creates and drops its own database, starts the server on port 3120. Set `E2E_CHROMIUM` for a browser installed elsewhere |
 
 ## Layout (PLAN section 4)
@@ -57,7 +53,7 @@ scripts/migrate.ts      CLI wrapper around the migration runner
 tests/domain/           unit tests for the pure rules, time, state machines
 tests/server/           policy tests, including the PERMISSIONS.md mirror test
 tests/db/               constraint tests against a real PostgreSQL
-Dockerfile, docker-compose.yml, .env.example
+.env.example
 ```
 
 ## What Stage 0 contains
@@ -80,7 +76,7 @@ Dockerfile, docker-compose.yml, .env.example
 - **Policy module** `src/server/policy.ts`: deny-by-default `can(actor, action, resource?)`, `decide()` (tells "not allowed" from "out of scope", for 404 vs 403), `scopeFilter()` for list queries and exports. Table is Module x Action x Scope and mirrors `docs/PERMISSIONS.md`; a test parses that file and fails if a module is missing or a role marked "—" holds anything in it.
 - **Injectable clock** `src/server/clock.ts` (`Clock`, `systemClock`, `FixedClock`), and the pure date/time helpers in `src/domain/time.ts`.
 - **Domain port**: the prototype's React-free rules (eligibility, bed conflict/overlap windows, approval clock, stay state, separation-of-duties check) in `src/domain/`, with their types. The prototype's in-memory store and its permission tables were not ported (the policy module replaces the latter).
-- **Containers and CI**: multi-stage `Dockerfile` (Next `output: 'standalone'`, non-root, separate `migrate` target), `docker-compose.yml`, `.github/workflows/ci.yml` with `platform` and `prototype` jobs.
+- **CI**: `.github/workflows/ci.yml` with `platform` and `prototype` jobs. Deployment is without containers: `docs/DEPLOYMENT.md`.
 
 ## Stage 1 core (WP-0)
 
@@ -116,7 +112,7 @@ Background jobs (pg-boss), notifications, the clearance, key, cleaning, work-ord
 
 - **Migrations are forward-only.** Never edit an applied file (the runner refuses and says so); add `NNNN_name.sql`. Every new table must `GRANT` explicitly to `app_role` (nothing is granted by default) and must have `created_at` and a uuid primary key.
 - **The app connects as a member of `app_role`**, not as the migration owner. Example for a real deployment:
-  `CREATE ROLE gh_app LOGIN PASSWORD '...' IN ROLE app_role;` then point `DATABASE_URL` at it, and run `db:migrate` with a privileged URL. The local `docker-compose.yml` uses the owner for simplicity.
+  `CREATE ROLE gh_app LOGIN PASSWORD '...' IN ROLE app_role;` then point `DATABASE_URL` at it, and run `db:migrate` with a privileged URL.
 - **Values in the database are snake_case** (`needs_cleaning`, `checked_out`); the ported prototype types keep CamelCase (`NeedsCleaning`). `src/domain/enums.ts` holds the database values and a test keeps them equal to the CHECK constraints. The repository layer (Stage 1+) maps rows to the ported shapes.
 - **Drizzle** (`src/server/db/schema.ts`) describes columns for typed queries. It does not generate the schema; `tests/db/schema-sync.test.ts` fails if it drifts from the migrated database.
 - **Dates**: stored as UTC `timestamptz`; business dates (`date`, `daterange`) are plain calendar dates. Site time zone is a column on `site`, applied at display time.

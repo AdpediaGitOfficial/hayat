@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed-dev.ts",
+    "db:first-admin": "tsx scripts/create-first-admin.ts",
     "e2e": "playwright test",
     "sweeps": "tsx scripts/sweeps.ts"
   },
