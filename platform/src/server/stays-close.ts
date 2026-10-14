@@ -55,3 +55,8 @@ export async function stayCloseBlockers(tx: Tx, s: StayForClose): Promise<string
   for (const b of BLOCKERS) { const why = await b.check(tx, s); if (why) out.push(why) }
   return out
 }
+
+// >>> WP-H stay closer (the person's clearance case is Cleared). closer.ts imports only TYPES from this file, so there is no import cycle.
+import { clearanceCloser } from '@/server/commands/exit/closer'
+registerStayCloser('clearance', clearanceCloser)
+// <<< WP-H stay closer
