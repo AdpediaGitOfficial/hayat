@@ -25,7 +25,7 @@ export async function pendingDrafts(db: Reader, now: Date): Promise<ApprovalDraf
   return all
 }
 
-export async function listInbox(db: Reader, actor: Actor, now: Date): Promise<InboxItem[]> {
+export async function listInbox(db: Reader, actor: Actor, now: Date, userId?: string): Promise<InboxItem[]> {
   const items: InboxItem[] = []
   for (const d of await pendingDrafts(db, now)) {
     const res = { siteId: d.siteId }
@@ -37,10 +37,11 @@ export async function listInbox(db: Reader, actor: Actor, now: Date): Promise<In
     const current = d.deciders.filter(x => x.level <= clock.level).sort((a, b) => b.level - a.level)[0] ?? d.deciders[0]
     const primary = d.deciders.find(x => x.level === 0)?.label ?? ''
     const backup = d.deciders.find(x => x.level === 1)?.label ?? ''
-    const mine = allowedNow && !own
+    // A source that knows its own rule says exactly who may decide (same function the command applies); otherwise the action at a reached level.
+    const mine = !own && (d.decidable ? d.decidable(actor, { clock, userId }) : allowedNow)
     const why = mine ? undefined
       : own ? 'You cannot decide this: it is about you or raised by you (separation of duties, D-26). It is routed to an independent approver.'
-        : `Waiting for ${current.label}. Your role can decide it from the next level.`
+        : d.whyNot?.(actor, { clock, userId }) ?? `Waiting for ${current.label}. Your role can decide it from the next level.`
     items.push({
       kind: d.kind, ref: d.ref, siteId: d.siteId, subjectStaffIds: d.subjectStaffIds, raisedByStaffId: d.raisedByStaffId,
       title: d.title, sub: d.sub, createdAt: d.createdAt, urgent: d.urgent, href: d.href,

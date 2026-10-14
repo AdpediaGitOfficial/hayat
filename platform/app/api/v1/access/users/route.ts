@@ -22,5 +22,7 @@ export const POST = route({
   name: 'access.users.create',
   access: { kind: 'action', action: 'users_roles.manage_staff_accounts' },
   body: createInput,
+  // Creating an account with an initial role files a role-change request: the same high-risk action (D-03, P-02 pending sign-off).
+  reauth: { action: 'access.role_change', when: b => !!b.initialRole },
   handler: (rc, body) => createAccount(rc, body),
 })

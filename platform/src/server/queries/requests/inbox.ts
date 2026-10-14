@@ -89,7 +89,7 @@ export interface InboxCard extends InboxItem {
 
 export async function approvalsInbox(db: Reader, rc: Pick<RequestContext, 'actor' | 'user' | 'clock'>): Promise<InboxCard[]> {
   const now = rc.clock.now()
-  const items = await listInbox(db, rc.actor, now)
+  const items = await listInbox(db, rc.actor, now, rc.user.id)
   if (items.length === 0) return []
   const today = todayOf(now)
   const active = await delegationRows(db, and(isNull(delegation.revokedAt), lte(delegation.startsOn, today), gte(delegation.endsOn, today)), today)

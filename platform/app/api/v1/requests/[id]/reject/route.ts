@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 /** Reject with a reason; the resident is told. */
 export const POST = route({
   name: 'requests.reject',
-  access: { kind: 'action', action: 'requests_waitlist.approve' },
+  access: { kind: 'action', action: 'approvals_inbox.view' },
   body: decisionInput.omit({ requestId: true }),
   handler: (rc, body, _req, _r, { params }) => {
     const requestId = idParam(params)

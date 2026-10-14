@@ -1,15 +1,16 @@
 'use client'
 /** Approve and reject, each in a dialog. Reject needs a reason (AT-018); approve needs a note when rules would have failed. */
 import { useState } from 'react'
-import { Alert, Button, Field, Modal, Textarea } from '@/ui'
+import { Alert, Button, ConfirmPassword, Field, Modal, Textarea } from '@/ui'
 import type { DecideOut } from '@/server/commands/emergency/decide'
 import { Problem, useCall } from './common'
 
-export function DecideActions({ caseId, who, bedCode, failedReasons }: { caseId: string; who: string; bedCode: string; failedReasons: string[] }) {
+export function DecideActions({ caseId, who, bedCode, failedReasons, needsPassword = false }: { caseId: string; who: string; bedCode: string; failedReasons: string[]; needsPassword?: boolean }) {
   const [open, setOpen] = useState<'approve' | 'reject'>()
   const [note, setNote] = useState('')
+  const [password, setPassword] = useState('')
   const { run, busy, err, clearError } = useCall()
-  const close = () => { setOpen(undefined); setNote(''); clearError() }
+  const close = () => { setOpen(undefined); setNote(''); setPassword(''); clearError() }
   const needsNote = open === 'approve' && failedReasons.length > 0
 
   return (
@@ -21,8 +22,8 @@ export function DecideActions({ caseId, who, bedCode, failedReasons }: { caseId:
       <Modal open={!!open} onClose={close} title={open === 'approve' ? `Approve ${who} in ${bedCode}` : `Reject ${who} in ${bedCode}`}
         footer={<>
           <Button variant="ghost" onClick={close}>Cancel</Button>
-          <Button variant={open === 'approve' ? 'primary' : 'danger'} disabled={busy || note.trim().length < (open === 'reject' || needsNote ? 3 : 0)}
-            onClick={() => void run<DecideOut>('POST', `/api/v1/emergency/${caseId}/${open}`, open === 'approve' ? { note: note || null } : { reason: note }, () => close())}>
+          <Button variant={open === 'approve' ? 'primary' : 'danger'} disabled={busy || note.trim().length < (open === 'reject' || needsNote ? 3 : 0) || (needsPassword && password.length === 0)}
+            onClick={() => void run<DecideOut>('POST', `/api/v1/emergency/${caseId}/${open}`, { ...(open === 'approve' ? { note: note || null } : { reason: note }), ...(needsPassword ? { confirmPassword: password } : {}) }, () => close())}>
             {open === 'approve' ? 'Approve stay' : 'Reject and open relocation task'}
           </Button>
         </>}>
@@ -36,6 +37,7 @@ export function DecideActions({ caseId, who, bedCode, failedReasons }: { caseId:
             error={err?.fields?.reason ?? err?.fields?.note}>
             <Textarea value={note} onChange={e => setNote(e.target.value)} rows={3} />
           </Field>
+          {needsPassword && <ConfirmPassword value={password} onChange={setPassword} error={err?.fields?.confirmPassword} />}
         </div>
       </Modal>
     </>

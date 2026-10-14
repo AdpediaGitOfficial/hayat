@@ -115,12 +115,23 @@ export async function signIn(u: { username: string; password: string }): Promise
 }
 
 const mods = import.meta.glob('../../../app/api/v1/access/**/route.ts', { eager: true }) as Record<string, Record<string, Handler>>
+/**
+ * D-03 / P-02: these routes re-ask for the signed-in person's password (default ON). The tests' people all use PASSWORD, so the client types it
+ * for them unless a test passes its own `confirmPassword` (to prove a wrong or missing one is refused).
+ */
+const REAUTH_PATHS = new Set(['users/[id]/role-changes', 'role-changes/[id]/decide', 'grants', 'grants/[id]/decide', 'grants/[id]/revoke'])
+export function withPassword(method: string, path: string, body: unknown): unknown {
+  if (method !== 'POST' || !body || typeof body !== 'object' || Array.isArray(body) || 'confirmPassword' in body) return body
+  const needs = REAUTH_PATHS.has(path) || (path === 'users' && !!(body as { initialRole?: unknown }).initialRole)
+  return needs ? { ...body, confirmPassword: PASSWORD } : body
+}
+
 export function acc(cookie?: string) {
   const go = (method: string, path: string, o: { params?: Record<string, string>; body?: unknown; query?: Record<string, string> } = {}) => {
     const h = mods[`../../../app/api/v1/access/${path}/route.ts`]?.[method]
     if (!h) throw new Error(`no ${method} handler at ${path}`)
     const url = '/api/v1/access/' + path.replace(/\[(\w+)\]/g, (_m, k: string) => o.params?.[k] ?? randomUUID()) + (o.query ? '?' + new URLSearchParams(o.query).toString() : '')
-    return call(h, { method, path: url, body: method === 'GET' ? undefined : (o.body ?? {}), cookie, params: o.params })
+    return call(h, { method, path: url, body: method === 'GET' ? undefined : withPassword(method, path, o.body ?? {}), cookie, params: o.params })
   }
   return { get: (p: string, o?: Parameters<typeof go>[2]) => go('GET', p, o), post: (p: string, o?: Parameters<typeof go>[2]) => go('POST', p, o), put: (p: string, o?: Parameters<typeof go>[2]) => go('PUT', p, o) }
 }

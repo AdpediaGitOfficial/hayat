@@ -7,7 +7,8 @@ import { accommodationRequest, bed, bedClaim, room } from '@/server/db/schema'
 import type { Db } from '@/server/db/client'
 import { suggestBeds, type BedSuggestion } from '@/server/allocation'
 import { claimPeriod } from '@/domain/claims'
-import { can, type Actor } from '@/server/policy'
+import { type Actor } from '@/server/policy'
+import { standingNow } from '@/server/approvals/escalation'
 
 type Reader = Pick<Db, 'select'>
 
@@ -16,7 +17,9 @@ export interface BedsForRequest { requestId: string; siteId: string; suggestions
 
 export async function bedsForRequest(db: Reader, actor: Actor, requestId: string, now: Date): Promise<BedsForRequest | undefined> {
   const [r] = await db.select().from(accommodationRequest).where(eq(accommodationRequest.id, requestId))
-  if (!r || !can(actor, 'requests_waitlist.approve', { siteId: r.siteId })) return undefined
+  if (!r) return undefined
+  // Whoever may decide the request now (the Accommodation Admin, or from the backup level a Policy Approver / Backup Approver: P-01, pending sign-off).
+  if (!(await standingNow(db, actor, { primary: 'requests_waitlist.approve', siteId: r.siteId, since: r.updatedAt, now })).ok) return undefined
   const suggestions = await suggestBeds(db, { staffId: r.staffId, siteId: r.siteId, from: r.arrivalDate, to: r.endDate ?? undefined, limit: 12, requestId: r.id, now })
   const period = claimPeriod(r.arrivalDate, r.endDate ?? undefined)
   const rows = await db.select({

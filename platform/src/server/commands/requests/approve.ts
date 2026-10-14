@@ -2,7 +2,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import { accommodationRequest, bed, reservation } from '@/server/db/schema'
 import { audit } from '@/server/audit'
-import { authorize } from '@/server/command/authorize'
+import { noDecisionGrant } from '@/server/approvals/escalation'
 import { allocateBed } from '@/server/allocation'
 import { recordExceptionUse } from '@/server/eligibility'
 import { runCommand } from '@/server/command/run'
@@ -10,7 +10,7 @@ import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, ok, type Failure, type Result } from '@/server/command/result'
 import { notify } from '@/server/notify'
 import { fmtDate } from '@/domain/time'
-import { bedLabel, decisionSod, etaFor, idSchema, loadRequest, notifyRequester, snapRequest, wrongState } from './shared'
+import { authorizeRequestDecision, bedLabel, decisionSod, etaFor, idSchema, loadRequest, notifyRequester, snapRequest, wrongState } from './shared'
 
 export const approveInput = z.object({ requestId: idSchema, bedId: idSchema })
 export type ApproveRequestInput = z.infer<typeof approveInput>
@@ -38,9 +38,11 @@ export interface ApproveOut {
  * separation of duties and eligibility apply to both.
  */
 export async function approveIn(c: CommandContext, i: ApproveRequestInput & { source: 'request' | 'bulk' }): Promise<Result<ApproveOut>> {
+  const none = noDecisionGrant(c.actor, 'requests_waitlist.approve')
+  if (none) return none
   const peek = await loadRequest(c.tx, i.requestId)
   if (!peek) return fail.notFound()
-  const denied = authorize(c, 'requests_waitlist.approve', { siteId: peek.siteId })
+  const denied = await authorizeRequestDecision(c, peek)
   if (denied) return denied
   const sod = decisionSod(c, peek, 'approve this request')
   if (sod) return sod

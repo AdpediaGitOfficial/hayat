@@ -11,12 +11,10 @@ import { z } from 'zod'
 import { bed, bedClaim, building, reservation, room, site, staffProfile, stay } from '@/server/db/schema'
 import type { Tx } from '@/server/command/context'
 import type { CommandContext } from '@/server/command/context'
-import { fail, failure, type Failure } from '@/server/command/result'
+import { fail, type Failure } from '@/server/command/result'
 import { decide, type Action, type Resource } from '@/server/policy'
 import { todayInZone } from '@/server/commands/property/shared'
-import { loadCalendar } from '@/server/eligibility'
-import { getConfig } from '@/server/config/registry'
-import { approvalClock } from '@/domain/approvals'
+import { authorizeEscalated } from '@/server/approvals/escalation'
 
 export { idSchema, isUuid, reasonSchema, todayInZone } from '@/server/commands/property/shared'
 export const dateSchema = z.iso.date('Use a date like 2026-11-30')
@@ -129,27 +127,18 @@ const PRIMARY: Record<DecisionKind, Action> = {
   extension: 'reservations_stays.approve_extension',
   extension_beyond: 'reservations_stays.approve_extension_beyond_policy',
 }
-/** Backup approvers and Policy Approvers (capabilities) decide once the item has been routed past the primary (APPROVALS.md). */
-const BACKUP: Action = 'approvals_inbox.decide_escalated'
 
 /**
  * May this actor decide this item right now? The primary decider (Accommodation Admin; for an extension beyond policy the
  * Policy Approver) at any time; a backup approver or Policy Approver only once the SLA clock has routed the item to the
- * backup level (reminder at 1 business day, backup at 2, escalated at 3). Scope always comes from the actor's own sites.
+ * backup level (reminder at 1 business day, backup at 2, escalated at 3), and only while `approvals.escalation_backup` is on
+ * (proposed P-01, pending client sign-off). Scope always comes from the actor's own sites. The rule itself lives in
+ * `src/server/approvals/escalation.ts`, shared with the request commands and the approvals inbox.
  */
 export async function authorizeDecision(c: CommandContext, o: { kind: DecisionKind; siteId: string; since: Date }): Promise<Failure | undefined> {
-  const res = { siteId: o.siteId }
-  const primary = decide(c.actor, PRIMARY[o.kind], res)
-  if (primary.allowed) return undefined
-  const backup = decide(c.actor, BACKUP, res)
-  if (!backup.allowed) {
-    return primary.reason === 'out_of_scope' || backup.reason === 'out_of_scope' ? fail.notFound() : fail.forbidden(`decide this (${PRIMARY[o.kind]})`)
-  }
-  const clock = approvalClock(o.since.getTime(), c.now.getTime(), await getConfig(c.tx, 'timers.routine_sla_business_days'), await loadCalendar(c.tx, o.siteId))
-  if (clock.level >= 1) return undefined
-  const first = o.kind === 'extension_beyond' ? 'a Policy Approver' : 'the Accommodation Admin'
-  return failure('forbidden', `This is waiting for ${first}. It reaches the backup approver after ${await getConfig(c.tx, 'timers.routine_sla_business_days')} business days`, {
-    owner: first === 'a Policy Approver' ? 'Policy Approver' : 'Accommodation Admin', next: 'Ask them to decide, or wait for the reminder and escalation',
+  return authorizeEscalated(c, {
+    primary: PRIMARY[o.kind], siteId: o.siteId, since: o.since,
+    first: o.kind === 'extension_beyond' ? { text: 'a Policy Approver', owner: 'Policy Approver' } : { text: 'the Accommodation Admin', owner: 'Accommodation Admin' },
   })
 }
 

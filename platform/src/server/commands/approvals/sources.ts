@@ -12,12 +12,15 @@ import { registerApprovalSource } from '@/server/approvals/registry'
 import type { ApprovalDraft, ApprovalSource, Decider } from '@/server/approvals/types'
 import { getConfig } from '@/server/config/registry'
 import { isUrgent } from '@/domain/approvals'
+import { escalationBackupOn, mayDecideNow, waitingReason } from '@/server/approvals/escalation'
 import { fmtDate } from '@/domain/time'
 
+// The backup level is the Policy Approver or Backup Approver (APPROVALS.md), who hold approvals_inbox.decide_escalated. Whether they may really
+// decide from there is proposed policy P-01 (approvals.escalation_backup, pending client sign-off), answered by `decidable` below.
 export const REQUEST_DECIDERS: Decider[] = [
   { level: 0, label: 'Accommodation Admin', action: 'requests_waitlist.approve', notify: 'AA' },
-  { level: 1, label: 'Policy Approver', action: 'requests_waitlist.approve_exception', notify: 'PolicyApprover' },
-  { level: 2, label: 'Super Admin', action: 'requests_waitlist.approve_exception', notify: 'SA' },
+  { level: 1, label: 'Policy Approver or backup approver', action: 'approvals_inbox.decide_escalated', notify: 'PolicyApprover' },
+  { level: 2, label: 'Policy Approver / Super Admin', action: 'approvals_inbox.decide_escalated', notify: 'SA' },
 ]
 // A Super Admin does not decide gender or grade exceptions (D-25): they are told when it escalates, and the Policy Approver keeps the decision.
 export const EXCEPTION_DECIDERS: Decider[] = [
@@ -33,6 +36,7 @@ const requestSource: ApprovalSource = {
   kind: 'request',
   async listPending(db, now) {
     const sla = await getConfig(db, 'timers.routine_sla_business_days')
+    const backupOn = await escalationBackupOn(db)
     const rows = await db.select({
       id: accommodationRequest.id, siteId: accommodationRequest.siteId, staffId: accommodationRequest.staffId, name: staffProfile.fullName, employeeId: staffProfile.employeeId,
       stayType: accommodationRequest.stayType, arrival: accommodationRequest.arrivalDate, end: accommodationRequest.endDate, since: accommodationRequest.updatedAt,
@@ -42,15 +46,21 @@ const requestSource: ApprovalSource = {
       .innerJoin(site, eq(site.id, accommodationRequest.siteId))
       .leftJoin(submitter, eq(submitter.id, accommodationRequest.submittedBy))
       .where(eq(accommodationRequest.status, 'submitted'))
-    return rows.map((r): ApprovalDraft => ({
-      kind: 'request', ref: r.id, siteId: r.siteId, subjectStaffIds: [r.staffId],
-      raisedByStaffId: (r.onBehalf ? r.submitterStaffId : r.staffId) ?? undefined,
-      title: `${r.name} (${r.employeeId}): bed request, ${r.stayType}`,
-      sub: `${r.siteName} · ${window(r.arrival, r.end)}`,
-      // The clock runs from when the request reached the admin: filing, or the last resubmission or exception decision.
-      createdAt: r.since.getTime(),
-      deciders: REQUEST_DECIDERS, urgent: isUrgent(r.arrival, now.getTime(), sla), href: `/requests/${r.id}`,
-    }))
+    return rows.map((r): ApprovalDraft => {
+      const subjectStaffIds = [r.staffId]
+      const raisedByStaffId = (r.onBehalf ? r.submitterStaffId : r.staffId) ?? undefined
+      return {
+        kind: 'request', ref: r.id, siteId: r.siteId, subjectStaffIds, raisedByStaffId,
+        title: `${r.name} (${r.employeeId}): bed request, ${r.stayType}`,
+        sub: `${r.siteName} · ${window(r.arrival, r.end)}`,
+        // The clock runs from when the request reached the admin: filing, or the last resubmission or exception decision.
+        createdAt: r.since.getTime(),
+        deciders: REQUEST_DECIDERS, urgent: isUrgent(r.arrival, now.getTime(), sla), href: `/requests/${r.id}`,
+        // The same rule the approve, reject and send-back commands apply (P-01, pending sign-off): the inbox and the API agree.
+        decidable: (actor, ctx) => mayDecideNow(actor, { primary: 'requests_waitlist.approve', siteId: r.siteId, backupOn, subjectStaffIds, raisedByStaffId }, ctx),
+        whyNot: () => waitingReason('the Accommodation Admin', backupOn),
+      }
+    })
   },
 }
 

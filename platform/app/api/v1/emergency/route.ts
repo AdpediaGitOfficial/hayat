@@ -28,5 +28,6 @@ export const POST = route({
   name: 'emergency.initiate',
   access: { kind: 'action', action: 'emergency_checkin.initiate' },
   body: initiateInput,
+  reauth: { action: 'emergency.initiate' },
   handler: (rc, body) => initiateEmergency(rc, body),
 })

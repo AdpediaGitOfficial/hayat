@@ -12,7 +12,7 @@ import { emergencyCheckin } from '@/server/db/schema.emergency'
 import { registerApprovalSource } from '@/server/approvals/registry'
 import type { ApprovalDraft, Decider } from '@/server/approvals/types'
 import type { ApprovalClock } from '@/domain/approvals'
-import { LEVEL_LABEL, primaryLabel } from '@/server/commands/emergency/rules'
+import { LEVEL_LABEL, primaryLabel, standing } from '@/server/commands/emergency/rules'
 
 function deciders(route: 'AA' | 'PA'): Decider[] {
   const primary: Decider = route === 'AA'
@@ -39,7 +39,7 @@ registerApprovalSource({
   async listPending(db, now) {
     const rows = await db.select({
       id: emergencyCheckin.id, siteId: emergencyCheckin.siteId, staffId: emergencyCheckin.staffId, route: emergencyCheckin.approverRoute,
-      initiatedByStaffId: emergencyCheckin.initiatedByStaffId, reason: emergencyCheckin.reason, createdAt: emergencyCheckin.createdAt,
+      initiatedBy: emergencyCheckin.initiatedBy, initiatedByStaffId: emergencyCheckin.initiatedByStaffId, reason: emergencyCheckin.reason, createdAt: emergencyCheckin.createdAt,
       reminders: emergencyCheckin.reminders, escalation: emergencyCheckin.escalation, name: staffProfile.fullName, bedCode: bed.code,
     }).from(emergencyCheckin)
       .innerJoin(stay, eq(stay.id, emergencyCheckin.stayId))
@@ -50,6 +50,11 @@ registerApprovalSource({
       kind: 'emergency', ref: r.id, siteId: r.siteId, subjectStaffIds: [r.staffId], raisedByStaffId: r.initiatedByStaffId ?? undefined,
       title: `Emergency check-in: ${r.name} in ${r.bedCode}`, sub: r.reason, createdAt: r.createdAt.getTime(), urgent: true, href: `/emergency/${r.id}`,
       deciders: deciders(r.route), ownClock: emergencyClock(r, r.createdAt.getTime(), now.getTime()),
+      // Exactly the rule the approve and reject commands apply (route and escalation level decide between the Accommodation Admin, the Backup
+      // Approver and the Policy Approver; D-66 to D-68, D-107). Emergency backup is not proposed policy P-01: it is decided.
+      decidable: (actor, ctx) => standing({ actor, userId: ctx.userId ?? '' }, {
+        route: r.route, escalation: r.escalation, siteId: r.siteId, initiatedBy: r.initiatedBy, initiatedByStaffId: r.initiatedByStaffId, subjectStaffId: r.staffId,
+      }).ok,
     }))
   },
 })
