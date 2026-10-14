@@ -42,6 +42,14 @@ export default async function ClearanceCasePage({ params }: { params: { id: stri
         <Alert tone="success" title={`Checked out of bed ${k.stay.bedCode}`} detail={`The stay is ${k.stay.status === 'closed' ? 'closed' : 'checked out'}. The bed is ${BED_STATE[k.stay.bedState] ?? k.stay.bedState}: clearance and a ready bed are tracked separately.`} />
       )}
       {k.overdue && isOpen && <Blocked why={`Clearance was due on ${k.dueDate} and is ${k.daysOverdue} business day${k.daysOverdue === 1 ? '' : 's'} overdue`} owner="Accommodation Admin, then the Policy Approver" next="Follow up the owners of the open items. Nothing closes by itself" />}
+      {isOpen && k.rules.strictItemOwners && (
+        <Alert tone="info" title="Items are completed by their owner"
+          detail="A proposed rule, pending client sign-off, is switched on: Reception completes Reception items, an Accommodation Admin or a Super Admin completes Accommodation Admin items, and the Maintenance Coordinator completes Maintenance items." />
+      )}
+      {isOpen && !k.rules.waiverWritesOffKey && (
+        <Alert tone="info" title="A waiver does not write a key off"
+          detail="A proposed rule, pending client sign-off, is switched off: when a Policy Approver waives a lost or damaged key, the key stays on the keys register and keeps the stay open until Keys & assets retires or replaces it." />
+      )}
       {k.notYetOnCase.length > 0 && <Alert tone="warning" title="Held now, not yet on this case" detail={`${k.notYetOnCase.map(h => h.label).join(', ')}. They join the case the next time it is worked or closed.`} />}
 
       <div className="grid two">
@@ -69,6 +77,11 @@ export default async function ClearanceCasePage({ params }: { params: { id: stri
                   {i.waiver && (
                     <div className="body-sm" style={{ marginTop: 6 }}>
                       Waived {i.waiver.at ? utc(i.waiver.at) : ''}{i.waiver.byName ? ` by ${i.waiver.byName}` : ''}. Reason: {i.waiver.reason}. Evidence: {i.waiver.evidence}
+                    </div>
+                  )}
+                  {i.keyOpenAfterWaiver && (
+                    <div style={{ marginTop: 6 }} data-testid="waived-key-open">
+                      <Blocked why={`Waived, but ${i.keyOpenAfterWaiver.code} is still ${i.keyOpenAfterWaiver.status} in the keys register. This waiver does not write it off, so the stay stays open`} owner={i.keyOpenAfterWaiver.owner} next={i.keyOpenAfterWaiver.next} />
                     </div>
                   )}
                   {i.lostOrDamaged && i.status === 'outstanding' && <div style={{ marginTop: 6 }}><Blocked why="A lost or damaged key is never marked returned (D-73)" owner={i.ownerLabel} next={i.next ?? undefined} /></div>}

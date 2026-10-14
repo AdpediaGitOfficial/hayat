@@ -20,10 +20,11 @@ import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, failure, ok, type Failure, type Result } from '@/server/command/result'
 import { confirmPassword } from '@/server/auth/reauth'
 import { notify } from '@/server/notify'
+import { getConfig } from '@/server/config/registry'
 import { OWNER_LABEL, nextActionFor } from './rules'
 import { loadItemLocked, logEvent as logEvent2, setState } from '@/server/commands/keys/shared'
 import {
-  attachmentsOnItem, authorizeAtSite, caseItems, idSchema, logEvent, loadCaseLocked, reasonSchema, refreshCaseStatus, resolveItems, syncHandoverItems,
+  attachmentsOnItem, authorizeAtSite, caseItems, idSchema, itemOwnerDenied, logEvent, loadCaseLocked, reasonSchema, refreshCaseStatus, resolveItems, syncHandoverItems,
   type CaseRow, type ResolvedItem,
 } from './shared'
 
@@ -63,17 +64,13 @@ async function load(c: CommandContext, itemId: string): Promise<Loaded | Failure
 }
 const isFail = (x: Loaded | Failure): x is Failure => 'ok' in x
 
-/** Maintenance-owned items are the Maintenance Coordinator's (exit_clearance.inspection_item); the rest are Reception's, the AA's and the SA's. */
-function mayWork(c: CommandContext, l: Loaded): Failure | undefined {
-  const owner = l.item.owner
-  const denied = authorizeAtSite(c, owner === 'Maintenance' ? 'exit_clearance.inspection_item' : 'exit_clearance.clearance_task', l.kase.siteId)
-  if (!denied) return undefined
-  if (denied.code === 'forbidden') {
-    return failure('forbidden', owner === 'Maintenance' ? 'Only the Maintenance Coordinator can complete an inspection item' : 'Only Reception, an Accommodation Admin or a Super Admin can work clearance items', {
-      owner: OWNER_LABEL[owner], next: owner === 'Maintenance' ? 'Ask the Maintenance Coordinator of this site to complete it' : 'Ask Reception or an Accommodation Admin',
-    })
-  }
-  return denied
+/**
+ * Maintenance-owned items are the Maintenance Coordinator's (exit_clearance.inspection_item); the rest are Reception's, the AA's and the SA's.
+ * With `clearance.strict_item_owners` on (P-07, proposed, pending client sign-off) Accommodation Admin items are the AA's and SA's alone.
+ */
+async function mayWork(c: CommandContext, l: Loaded): Promise<Failure | undefined> {
+  const strict = await getConfig(c.tx, 'clearance.strict_item_owners', l.kase.siteId ?? undefined)
+  return itemOwnerDenied(c, l.item.owner, l.kase.siteId, strict)
 }
 
 function frozen(l: Loaded): Failure | undefined {
@@ -89,7 +86,7 @@ export function completeItem(rc: RequestContext, i: CompleteItemInput): Promise<
   return runCommand(rc, async c => {
     const l = await load(c, i.itemId)
     if (isFail(l)) return l
-    const denied = mayWork(c, l)
+    const denied = await mayWork(c, l)
     if (denied) return denied
     const self = notSelf(c, l.kase.staffId, 'complete clearance items')
     if (self) return self
@@ -133,7 +130,7 @@ export function markOutstanding(rc: RequestContext, i: OutstandingInput): Promis
   return runCommand(rc, async c => {
     const l = await load(c, i.itemId)
     if (isFail(l)) return l
-    const denied = mayWork(c, l)
+    const denied = await mayWork(c, l)
     if (denied) return denied
     const self = notSelf(c, l.kase.staffId, 'work on your own clearance')
     if (self) return self
@@ -216,21 +213,34 @@ export function waiveItem(rc: RequestContext, i: WaiveItemInput): Promise<Result
     await c.tx.update(clearanceItem).set({
       status: 'waived', waivedBy: c.user.id, waivedAt: c.now, waiverReason: i.reason, waiverEvidence: i.evidence, onBehalfOfStaffId: kase.staffId,
     }).where(eq(clearanceItem.id, item.id))
-    // A waived key or asset is written off: the Policy Approver accepted that it will not come back, so the register retires it
-    // (never "returned", D-73) and it stops holding the stay open. The history keeps who held it and why it was retired.
+    // P-06 (PROPOSED, pending client sign-off; `clearance.waiver_writes_off_key`, default on = the Stage 3 behaviour).
+    // ON: a waived key or asset is written off. The Policy Approver accepted that it will not come back, so the register retires it
+    //     (never "returned", D-73) and it stops holding the stay open. The history keeps who held it and why it was retired.
+    // OFF: the waiver is recorded for the clearance case, but the key stays Lost (or Damaged, or Issued) in the register and keeps the
+    //     stay open until Keys & assets resolves it (retire or replace). Nothing is retired behind anyone's back.
+    const writeOff = await getConfig(c.tx, 'clearance.waiver_writes_off_key', kase.siteId ?? undefined)
     const [link] = await c.tx.select({ handoverId: clearanceItem.handoverItemId }).from(clearanceItem).where(eq(clearanceItem.id, item.id)).limit(1)
+    let keyStaysOpen: { code: string; status: string } | undefined
     if (item.kind === 'handover' && link?.handoverId) {
       const hi = await loadItemLocked(c.tx, link.handoverId)
       if (hi && ['issued', 'lost', 'damaged'].includes(hi.status)) {
-        await setState(c, hi.id, { status: 'retired', holderStaffId: null, issuedAt: null, dueBack: null })
-        await logEvent2(c, { itemId: hi.id, kind: 'retired', staffId: hi.holderStaffId, onBehalf: true, note: `Written off by a Policy Approver waiver: ${i.reason}` })
-        await audit(c, { action: 'keys.item.written_off', entityType: 'handover_item', entityId: hi.id, siteId: hi.siteId, reason: i.reason, before: { status: hi.status, holder: hi.holderStaffId }, after: { status: 'retired', via: 'clearance waiver', clearanceItemId: item.id } })
+        if (writeOff) {
+          await setState(c, hi.id, { status: 'retired', holderStaffId: null, issuedAt: null, dueBack: null })
+          await logEvent2(c, { itemId: hi.id, kind: 'retired', staffId: hi.holderStaffId, onBehalf: true, note: `Written off by a Policy Approver waiver: ${i.reason}` })
+          await audit(c, { action: 'keys.item.written_off', entityType: 'handover_item', entityId: hi.id, siteId: hi.siteId, reason: i.reason, before: { status: hi.status, holder: hi.holderStaffId }, after: { status: 'retired', via: 'clearance waiver', clearanceItemId: item.id } })
+        } else {
+          keyStaysOpen = { code: hi.code, status: hi.status }
+          await notify(c.tx, {
+            dedupeKey: `clearance:item:${item.id}:waived:key_open`, kind: 'exit.waived_key_open', to: { role: 'AA', siteId: hi.siteId }, ref: { type: 'handover_item', id: hi.id },
+            text: `A Policy Approver waived "${item.label}" in a clearance case, but the key or asset ${hi.code} is still ${hi.status} in Keys & assets. The stay stays open until it is retired or replaced there.`,
+          })
+        }
       }
     }
-    await logEvent(c.tx, { caseId: kase.id, itemId: item.id, kind: 'item_waived', actorUserId: c.user.id, onBehalfOfStaffId: kase.staffId, note: `${i.reason}. Evidence: ${i.evidence}`, at: c.now })
+    await logEvent(c.tx, { caseId: kase.id, itemId: item.id, kind: 'item_waived', actorUserId: c.user.id, onBehalfOfStaffId: kase.staffId, note: `${i.reason}. Evidence: ${i.evidence}${keyStaysOpen ? `. ${keyStaysOpen.code} stays ${keyStaysOpen.status} in Keys & assets until it is retired or replaced` : ''}`, at: c.now })
     await audit(c, {
       action: 'exit.clearance.item_waived', entityType: 'clearance_item', entityId: item.id, siteId: kase.siteId ?? undefined, reason: i.reason,
-      before: snap(item), after: { ...snap(item), stored: 'waived', effective: 'waived', waivedBy: c.user.id, evidence: i.evidence, attachmentIds: i.attachmentIds ?? [], caseId: kase.id, mandatory: item.mandatory },
+      before: snap(item), after: { ...snap(item), stored: 'waived', effective: 'waived', waivedBy: c.user.id, evidence: i.evidence, attachmentIds: i.attachmentIds ?? [], caseId: kase.id, mandatory: item.mandatory, ...(item.kind === 'handover' ? { keyWrittenOff: writeOff && !keyStaysOpen, keyStaysOpen: keyStaysOpen ?? null } : {}) },
     })
     await notify(c.tx, {
       dedupeKey: `clearance:item:${item.id}:waived`, kind: 'exit.item_waived', to: kase.siteId ? { role: 'AA', siteId: kase.siteId } : { role: 'AA' }, ref: { type: 'clearance_case', id: kase.id },

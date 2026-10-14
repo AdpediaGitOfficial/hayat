@@ -3,18 +3,18 @@
  * Everything takes the caller's transaction or reader; nothing here opens its own.
  */
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { bed, bedClaim, reservation, site, staffProfile, stay, userAccount, roleAssignment } from '@/server/db/schema'
+import { accommodationRequest, bed, bedClaim, reservation, site, staffProfile, stay, userAccount, roleAssignment } from '@/server/db/schema'
 import { attachment, handoverEvent, handoverItem } from '@/server/db/schema.stage3'
 import { clearanceCase, clearanceEvent, clearanceItem, type ClearanceEventKind, type ClearanceOwner } from '@/server/db/schema.exit'
 import type { Db } from '@/server/db/client'
 import type { Tx } from '@/server/command/context'
 import { authorize } from '@/server/command/authorize'
-import { fail, type Failure } from '@/server/command/result'
+import { fail, failure, type Failure } from '@/server/command/result'
 import { getConfig } from '@/server/config/registry'
 import { scopeFilter, type Action, type Actor } from '@/server/policy'
 import { outstandingHandovers } from '@/server/handover/outstanding'
 import { OCCUPYING_STAY_STATUSES } from '@/domain/enums'
-import { deriveCaseStatus, effectiveStatus, effectiveOwner, isLostOrDamaged, type ItemFacts } from './rules'
+import { deriveCaseStatus, effectiveStatus, effectiveOwner, isLostOrDamaged, OWNER_LABEL, type ItemFacts } from './rules'
 
 export { idSchema, reasonSchema, isUuid, todayInZone } from '@/server/commands/property/shared'
 
@@ -90,6 +90,57 @@ export function authorizeAtSite(c: { actor: Actor }, action: Action, siteId: str
   if (denied) return denied
   if (scopeFilter(c.actor, action).kind === 'none') return fail.forbidden('do this because no site is assigned to you', 'Super Admin')
   return undefined
+}
+
+/**
+ * Who may work (complete, mark outstanding) a clearance item, by the item's owner.
+ *
+ * Default (`clearance.strict_item_owners` off, the behaviour since Stage 3): Maintenance items only by the Maintenance Coordinator
+ * (`inspection_item`); every other item by Reception, an Accommodation Admin or a Super Admin (`clearance_task`).
+ * Proposed P-07, pending client sign-off (setting on): an item owned by the Accommodation Admin is completed only by an
+ * Accommodation Admin or a Super Admin (`manage_case`); Reception completes Reception items only. Maintenance is unchanged.
+ * Pure: the caller reads the setting. Out of scope reads as not found (AT-001).
+ */
+export function itemOwnerDenied(c: { actor: Actor }, owner: ClearanceOwner, siteId: string | null | undefined, strict: boolean): Failure | undefined {
+  const denied = authorizeAtSite(c, owner === 'Maintenance' ? 'exit_clearance.inspection_item' : 'exit_clearance.clearance_task', siteId)
+  if (denied) {
+    if (denied.code !== 'forbidden') return denied
+    return failure('forbidden', owner === 'Maintenance' ? 'Only the Maintenance Coordinator can complete an inspection item' : 'Only Reception, an Accommodation Admin or a Super Admin can work clearance items', {
+      owner: OWNER_LABEL[owner], next: owner === 'Maintenance' ? 'Ask the Maintenance Coordinator of this site to complete it' : 'Ask Reception or an Accommodation Admin',
+    })
+  }
+  if (strict && owner === 'AA' && authorizeAtSite(c, 'exit_clearance.manage_case', siteId)) {
+    return failure('forbidden', 'This item belongs to the Accommodation Admin, so Reception cannot complete it (the owner rule is a proposal, pending client sign-off, and is switched on)', {
+      owner: OWNER_LABEL.AA, next: 'Ask an Accommodation Admin or a Super Admin of this site to complete it',
+      detail: { reason: 'strict_item_owner', itemOwner: owner, proposal: 'P-07' },
+    })
+  }
+  return undefined
+}
+
+/** Has this person EVER had a stay, a reservation or an accommodation request, at any site and in any status? (P-08: "never had" = none of the three.) */
+export async function everHadSite(q: Reader, staffId: string): Promise<boolean> {
+  const [s] = await q.select({ id: stay.id }).from(stay).where(eq(stay.staffId, staffId)).limit(1)
+  if (s) return true
+  const [r] = await q.select({ id: reservation.id }).from(reservation).where(eq(reservation.staffId, staffId)).limit(1)
+  if (r) return true
+  const [a] = await q.select({ id: accommodationRequest.id }).from(accommodationRequest).where(eq(accommodationRequest.staffId, staffId)).limit(1)
+  return !!a
+}
+
+/**
+ * P-08 (PROPOSED, pending client sign-off; `exit.sited_only`, default off): with the setting on, a person who never had a stay,
+ * reservation or request at any site can be marked Left only by a Super Admin. Off: nothing changes (any holder of the action).
+ * `siteId` is where the exit takes place now; a person who has one has had one, so only the no-site case needs the lookup.
+ */
+export async function sitedOnlyFailure(c: { actor: Actor; tx: Reader }, staffId: string, siteId: string | undefined): Promise<Failure | undefined> {
+  if (siteId) return undefined
+  if (c.actor.role === 'SA' && c.actor.sites === 'all') return undefined
+  if (!(await getConfig(c.tx, 'exit.sited_only'))) return undefined
+  if (await everHadSite(c.tx, staffId)) return undefined
+  return failure('forbidden', 'This person has never had a stay, reservation or request at any site, so only a Super Admin can mark them as Left (a proposed rule, pending client sign-off, that is switched on)', {
+    owner: 'Super Admin', next: 'Ask a Super Admin to mark them as Left', detail: { reason: 'sited_only', proposal: 'P-08' },
+  })
 }
 
 /** Does this account hold a Super Admin assignment (active)? */

@@ -9,6 +9,11 @@
  *  - lost or damaged is a state, never a return: the item keeps its holder and the only exits are retire, replace
  *    (the new item is linked and the old one retired, D-73) and, for a lost item, found,
  *  - whatever resolves what a person held calls closeStayIfDone, so the last return can close a cleared stay (D-64).
+ *
+ * Proposed policies on top (pending client sign-off, each behind a setting; see ./hours and docs/DECISIONS.md section 15):
+ *  - P-03 every movement records `after_hours` (event and audit); with `keys.enforce_office_hours` on, Reception is refused out of hours,
+ *  - P-04 `keys.damage_evidence_required`: marking an item damaged needs at least one file attached to it,
+ *  - P-05 `reportOwnLost` (./ownLost.ts): a resident reports their own key lost when `keys.resident_may_report_lost` is on.
  */
 import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
@@ -19,7 +24,9 @@ import { runCommand } from '@/server/command/run'
 import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, failure, ok, type Failure, type Result } from '@/server/command/result'
 import { notify } from '@/server/notify'
+import { getConfig } from '@/server/config/registry'
 import { duplicate, guardUnique, todayInZone } from '@/server/commands/property/shared'
+import { isRefusal, movementHours } from './hours'
 import { site as siteTable } from '@/server/db/schema'
 import {
   archivedFailure, attachmentIdsSchema, authorizeAny, closeStaysOf, codeSchema, dateSchema, holdabilityProblem, holdFailure, idSchema, itemSnap, itemTypeFailure,
@@ -47,6 +54,8 @@ export function issueItem(rc: RequestContext, i: IssueItemInput): Promise<Result
     if (!item) return fail.notFound()
     const denied = authorizeAny(c, MOVE_ACTIONS, item.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, item.siteId)
+    if (isRefusal(hrs)) return hrs
     const self = notSelf(c, i.staffId, 'issue a key or asset to yourself')
     if (self) return self
     if (item.archivedAt) return archivedFailure()
@@ -67,8 +76,8 @@ export function issueItem(rc: RequestContext, i: IssueItemInput): Promise<Result
     if ('ok' in links) return links
 
     await setState(c, item.id, { status: 'issued', holderStaffId: i.staffId, issuedAt: c.now, dueBack: i.dueBack })
-    const eventId = await logEvent(c, { itemId: item.id, kind: 'issued', staffId: i.staffId, note: i.note })
-    await audit(c, { action: 'keys.item.issued', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: itemSnap({ ...item, status: 'issued', holderStaffId: i.staffId, dueBack: i.dueBack }) })
+    const eventId = await logEvent(c, { itemId: item.id, kind: 'issued', staffId: i.staffId, note: i.note, afterHours: hrs.afterHours })
+    await audit(c, { action: 'keys.item.issued', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: { ...itemSnap({ ...item, status: 'issued', holderStaffId: i.staffId, dueBack: i.dueBack }), afterHours: hrs.afterHours } })
     await notify(c.tx, {
       dedupeKey: `handover:${eventId}:issued`, kind: 'keys.issued', to: { staffId: i.staffId }, ref: { type: 'handover_item', id: item.id },
       text: `${label(item)} was issued to you.${i.dueBack ? ` Please return it by ${i.dueBack}.` : ' Return it to Reception when you leave.'} Report it to Reception at once if it is lost or damaged.`,
@@ -92,6 +101,8 @@ export function returnItem(rc: RequestContext, i: ReturnItemInput): Promise<Resu
     if (!item) return fail.notFound()
     const denied = authorizeAny(c, MOVE_ACTIONS, item.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, item.siteId)
+    if (isRefusal(hrs)) return hrs
     if (item.status === 'lost' || item.status === 'damaged') return NOT_RETURNABLE(item.status)
     if (item.status !== 'issued' || !item.holderStaffId) {
       return failure('conflict', item.status === 'in_cabinet' ? `${label(item)} is already in the cabinet` : `${label(item)} is ${item.status}, so it cannot be returned`, {
@@ -103,8 +114,8 @@ export function returnItem(rc: RequestContext, i: ReturnItemInput): Promise<Resu
     const holder = await staffRow(c.tx, item.holderStaffId)
     const onBehalf = i.onBehalf ?? (holder?.status === 'left')       // a former employee cannot be at the desk
     await setState(c, item.id, { status: 'in_cabinet', holderStaffId: null, issuedAt: null, dueBack: null })
-    await logEvent(c, { itemId: item.id, kind: 'returned', staffId: item.holderStaffId, onBehalf, note: i.note })
-    await audit(c, { action: 'keys.item.returned', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: { ...itemSnap({ ...item, status: 'in_cabinet', holderStaffId: null, dueBack: null }), onBehalf } })
+    await logEvent(c, { itemId: item.id, kind: 'returned', staffId: item.holderStaffId, onBehalf, note: i.note, afterHours: hrs.afterHours })
+    await audit(c, { action: 'keys.item.returned', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: { ...itemSnap({ ...item, status: 'in_cabinet', holderStaffId: null, dueBack: null }), onBehalf, afterHours: hrs.afterHours } })
     const closed = await closeStaysOf(c, item.holderStaffId)
     return ok(out(item, 'in_cabinet', null, closed), `${label(item)} returned${onBehalf ? ' on behalf of ' + (holder ? holder.name : 'the holder') : ''}`)
   })
@@ -131,18 +142,26 @@ function markProblem(kind: 'lost' | 'damaged') {
     if (!item) return fail.notFound()
     const denied = authorizeAny(c, MOVE_ACTIONS, item.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, item.siteId)
+    if (isRefusal(hrs)) return hrs
     if (item.archivedAt) return archivedFailure()
     if (item.status !== 'in_cabinet' && item.status !== 'issued') {
       return failure('conflict', `${label(item)} is already ${item.status}`, { owner: 'Accommodation Admin', next: item.status === 'retired' ? 'Nothing to record' : 'Resolve it: found, replaced or retired', detail: { reason: 'not_markable', status: item.status } })
     }
     const self = notSelf(c, item.holderStaffId, `record your own ${kind} key or asset`)
     if (self) return self
+    // P-04 (proposed, pending client sign-off): with the setting on, a damaged item needs at least one file attached to it. A lost one stays note-only.
+    if (kind === 'damaged' && (await getConfig(c.tx, 'keys.damage_evidence_required', item.siteId)) && (i.attachmentIds ?? []).length === 0) {
+      return failure('invalid', 'A photo or file is required to record a damaged key or asset', {
+        owner: 'Reception', next: 'Attach a photo of the damage, then record it again', fields: { attachmentIds: 'Attach at least one photo or file' }, detail: { reason: 'evidence_required' },
+      })
+    }
     const bad = await evidenceFailure(c, item.id, i.attachmentIds)
     if (bad) return bad
     // The holder stays: a lost or damaged item is still the holder's until it is resolved (D-73). It is never "returned".
     await setState(c, item.id, { status: kind, holderStaffId: item.holderStaffId, issuedAt: item.issuedAt, dueBack: item.dueBack })
-    const eventId = await logEvent(c, { itemId: item.id, kind, staffId: item.holderStaffId, note: i.note })
-    await audit(c, { action: `keys.item.${kind}`, entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note, before: itemSnap(item), after: { ...itemSnap({ ...item, status: kind }), attachmentIds: i.attachmentIds ?? [] } })
+    const eventId = await logEvent(c, { itemId: item.id, kind, staffId: item.holderStaffId, note: i.note, afterHours: hrs.afterHours })
+    await audit(c, { action: `keys.item.${kind}`, entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note, before: itemSnap(item), after: { ...itemSnap({ ...item, status: kind }), attachmentIds: i.attachmentIds ?? [], afterHours: hrs.afterHours } })
     await notify(c.tx, {
       dedupeKey: `handover:${eventId}:${kind}`, kind: `keys.${kind}`, to: { role: 'AA', siteId: item.siteId }, ref: { type: 'handover_item', id: item.id },
       text: `${label(item)} was reported ${kind}. Decide whether to find, replace or retire it. It stays on the holder's clearance until then.`,
@@ -165,14 +184,16 @@ export function foundItem(rc: RequestContext, i: FoundItemInput): Promise<Result
     if (!item) return fail.notFound()
     const denied = authorizeAny(c, MOVE_ACTIONS, item.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, item.siteId)
+    if (isRefusal(hrs)) return hrs
     if (item.status !== 'lost') return failure('conflict', `${label(item)} is ${item.status.replace('_', ' ')}, not lost`, { owner: 'Accommodation Admin', next: 'Only a lost item can be marked found', detail: { reason: 'not_lost', status: item.status } })
     const self = notSelf(c, item.holderStaffId, 'record that your own lost key or asset was found')
     if (self) return self
     if (i.to === 'holder' && !item.holderStaffId) return fail.invalid('This item had no holder, so it can only go back into the cabinet', { to: 'Choose the cabinet' })
     const toHolder = i.to === 'holder'
-    await setState(c, item.id, toHolder ? { status: 'issued', holderStaffId: item.holderStaffId, issuedAt: item.issuedAt, dueBack: item.dueBack } : { status: 'in_cabinet', holderStaffId: null, issuedAt: null, dueBack: null })
-    await logEvent(c, { itemId: item.id, kind: 'found', staffId: item.holderStaffId, note: [toHolder ? 'Back with the holder' : 'Back in the cabinet', i.note].filter(Boolean).join('. ') })
-    await audit(c, { action: 'keys.item.found', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: itemSnap({ ...item, status: toHolder ? 'issued' : 'in_cabinet', holderStaffId: toHolder ? item.holderStaffId : null }) })
+    await setState(c, item.id, toHolder ? { status: 'issued', holderStaffId: item.holderStaffId, issuedAt: item.issuedAt, dueBack: item.dueBack } : { status: 'in_cabinet', holderStaffId: null, issuedAt: null, dueBack: null }, { found: true })
+    await logEvent(c, { itemId: item.id, kind: 'found', staffId: item.holderStaffId, note: [toHolder ? 'Back with the holder' : 'Back in the cabinet', i.note].filter(Boolean).join('. '), afterHours: hrs.afterHours })
+    await audit(c, { action: 'keys.item.found', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.note ?? undefined, before: itemSnap(item), after: { ...itemSnap({ ...item, status: toHolder ? 'issued' : 'in_cabinet', holderStaffId: toHolder ? item.holderStaffId : null }), afterHours: hrs.afterHours } })
     const closed = !toHolder && item.holderStaffId ? await closeStaysOf(c, item.holderStaffId) : []
     return ok(out(item, toHolder ? 'issued' : 'in_cabinet', toHolder ? item.holderStaffId : null, closed), `${label(item)} found${toHolder ? ' and back with the holder' : ' and back in the cabinet'}`)
   })
@@ -193,13 +214,15 @@ export function retireItem(rc: RequestContext, i: RetireItemInput): Promise<Resu
     if (!item) return fail.notFound()
     const denied = authorizeAny(c, ['keys.manage'], item.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, item.siteId)
+    if (isRefusal(hrs)) return hrs
     if (item.status === 'retired') return ok(out(item, 'retired', null), 'Already retired')
     if (item.status === 'issued') return failure('conflict', `${label(item)} is still with its holder`, { owner: 'Reception', next: 'Record its return, or report it lost or damaged, then retire it', detail: { reason: 'issued', status: item.status } })
     const self = notSelf(c, item.holderStaffId, 'retire your own lost or damaged key or asset')
     if (self) return self
     await setState(c, item.id, { status: 'retired', holderStaffId: null, issuedAt: null, dueBack: null })
-    await logEvent(c, { itemId: item.id, kind: 'retired', staffId: item.holderStaffId, note: i.reason })
-    await audit(c, { action: 'keys.item.retired', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.reason, before: itemSnap(item), after: itemSnap({ ...item, status: 'retired', holderStaffId: null }) })
+    await logEvent(c, { itemId: item.id, kind: 'retired', staffId: item.holderStaffId, note: i.reason, afterHours: hrs.afterHours })
+    await audit(c, { action: 'keys.item.retired', entityType: 'handover_item', entityId: item.id, siteId: item.siteId, reason: i.reason, before: itemSnap(item), after: { ...itemSnap({ ...item, status: 'retired', holderStaffId: null }), formerHolderStaffId: item.holderStaffId, afterHours: hrs.afterHours } })
     const closed = item.holderStaffId ? await closeStaysOf(c, item.holderStaffId) : []
     return ok(out(item, 'retired', null, closed), `${label(item)} retired`)
   })
@@ -222,6 +245,8 @@ export function replaceItem(rc: RequestContext, i: ReplaceItemInput): Promise<Re
     if (!old) return fail.notFound()
     const denied = authorizeAny(c, ['keys.manage'], old.siteId)
     if (denied) return denied
+    const hrs = await movementHours(c, old.siteId)
+    if (isRefusal(hrs)) return hrs
     if (old.status !== 'lost' && old.status !== 'damaged') {
       return failure('conflict', `${label(old)} is ${old.status.replace('_', ' ')}: only a lost or damaged item is replaced`, {
         owner: 'Accommodation Admin', next: old.status === 'issued' ? 'Report it lost or damaged first' : 'Nothing to replace', detail: { reason: 'not_replaceable', status: old.status },
@@ -248,10 +273,10 @@ export function replaceItem(rc: RequestContext, i: ReplaceItemInput): Promise<Re
     const created = made[0]
 
     await setState(c, old.id, { status: 'retired', holderStaffId: null, issuedAt: null, dueBack: null }, { replacedBy: created.id })
-    await logEvent(c, { itemId: old.id, kind: 'replaced', staffId: old.holderStaffId, note: [`Replaced by ${created.code}`, i.note].filter(Boolean).join('. ') })
-    if (holder) await logEvent(c, { itemId: created.id, kind: 'issued', staffId: holder.id, note: `Replacement for ${old.code}` })
+    await logEvent(c, { itemId: old.id, kind: 'replaced', staffId: old.holderStaffId, note: [`Replaced by ${created.code}`, i.note].filter(Boolean).join('. '), afterHours: hrs.afterHours })
+    if (holder) await logEvent(c, { itemId: created.id, kind: 'issued', staffId: holder.id, note: `Replacement for ${old.code}`, afterHours: hrs.afterHours })
     await audit(c, { action: 'keys.item.created', entityType: 'handover_item', entityId: created.id, siteId: created.siteId, reason: `Replaces ${old.code}`, after: itemSnap(created) })
-    await audit(c, { action: 'keys.item.replaced', entityType: 'handover_item', entityId: old.id, siteId: old.siteId, reason: i.note ?? undefined, before: itemSnap(old), after: { ...itemSnap({ ...old, status: 'retired', holderStaffId: null, replacedBy: created.id }), replacedByCode: created.code, reissuedTo: holder?.id ?? null } })
+    await audit(c, { action: 'keys.item.replaced', entityType: 'handover_item', entityId: old.id, siteId: old.siteId, reason: i.note ?? undefined, before: itemSnap(old), after: { ...itemSnap({ ...old, status: 'retired', holderStaffId: null, replacedBy: created.id }), replacedByCode: created.code, reissuedTo: holder?.id ?? null, formerHolderStaffId: old.holderStaffId, afterHours: hrs.afterHours } })
     const closed = old.holderStaffId ? await closeStaysOf(c, old.holderStaffId) : []
     const message = holder ? `${old.code} retired. ${created.code} issued to ${who(holder)} in its place`
       : `${old.code} retired. ${created.code} is in the cabinet${old.holderStaffId ? ' (the holder cannot be given a new one: see their record)' : ''}`

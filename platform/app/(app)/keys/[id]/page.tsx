@@ -2,10 +2,13 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
 import { getItemDetail } from '@/server/queries/keys/items'
+import { getDb } from '@/server/db/client'
+import { getConfig } from '@/server/config/registry'
 import { Alert, Badge, Blocked, GlassCard, PageHeader } from '@/ui'
 import { fmtDate, fmtDateLong, fmtDateTime } from '@/domain/time'
-import { EVENT_LABEL, OverdueBadge, StatusChip } from '../_components/bits'
+import { AfterHoursBadge, EVENT_LABEL, OverdueBadge, StatusChip } from '../_components/bits'
 import { ItemActions } from '../_components/Forms'
+import { ReportLostButton } from '../_components/ReportLost'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Key or asset · Grand Hyatt Staff Accommodation' }
@@ -18,6 +21,9 @@ export default async function KeyPage({ params }: { params: { id: string } }) {
   const ref = { id: d.id, code: d.code, label: `${d.itemTypeLabel} ${d.code}`, status: d.status }
   const mine = cur.rc.actor.staffId !== undefined && d.holder?.id === cur.rc.actor.staffId
   const acts = d.abilities.move || d.abilities.manage
+  const db = getDb()
+  const damageEvidenceRequired = await getConfig(db, 'keys.damage_evidence_required', d.siteId)      // P-04 (proposed, pending client sign-off)
+  const mayReportLost = mine && !acts && d.status === 'issued' && (await getConfig(db, 'keys.resident_may_report_lost', d.siteId))   // P-05 (proposed, pending client sign-off)
 
   return (
     <>
@@ -55,6 +61,7 @@ export default async function KeyPage({ params }: { params: { id: string } }) {
                     <span style={{ flex: 1, minWidth: 200 }}>
                       <b>{EVENT_LABEL[e.kind] ?? e.kind}</b>{e.person ? <> · {e.person.name}</> : null}
                       {e.onBehalf && <> <Badge tone="info" outline>On behalf of the holder</Badge></>}
+                      {e.afterHours && <> <AfterHoursBadge /></>}
                       {e.note && <span className="muted body-sm" style={{ display: 'block' }}>{e.note}</span>}
                       <span className="muted body-sm" style={{ display: 'block' }}>{e.actor ? `${e.actor} · ` : ''}{fmtDateTime(Date.parse(e.at))}</span>
                     </span>
@@ -71,13 +78,14 @@ export default async function KeyPage({ params }: { params: { id: string } }) {
               <GlassCard title="Actions">
                 {d.archived
                   ? <p className="muted body-sm">This item is archived. It is kept for the history.</p>
-                  : <ItemActions item={ref} holder={d.holder ? { id: d.holder.id, name: d.holder.name } : undefined} holderLeft={d.holder?.left} today={today} canMove={d.abilities.move} canManage={d.abilities.manage} />}
+                  : <ItemActions item={ref} holder={d.holder ? { id: d.holder.id, name: d.holder.name } : undefined} holderLeft={d.holder?.left} today={today} canMove={d.abilities.move} canManage={d.abilities.manage} damageEvidenceRequired={damageEvidenceRequired} />}
               </GlassCard>
             )
             : (
               <GlassCard title={mine ? 'You hold this' : 'This item'}>
                 <p className="body-sm">{mine ? 'To hand it back, take it to Reception. If it is lost or damaged, tell Reception at once; do not wait.' : 'You can see this item. Reception and the Accommodation Admin act on it.'}</p>
                 {d.status === 'issued' && mine && d.dueBack && <Alert tone="info" title={`Due back ${fmtDate(d.dueBack)}`} />}
+                {mayReportLost && <div style={{ marginTop: 10 }}><ReportLostButton item={ref} /></div>}
               </GlassCard>
             )}
 

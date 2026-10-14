@@ -8,7 +8,7 @@ import { staffProfile } from '@/server/db/schema'
 import type { Db } from '@/server/db/client'
 import type { Actor } from '@/server/policy'
 import { activeSuperAdminIds, isFullSuperAdmin, loadTarget, targetManageableBy } from '@/server/commands/access/guards'
-import { authorizeAtSite, exitSiteId, holdsSuperAdmin, latestCaseFor, loadPerson, OPEN_CASE_STATUSES } from '@/server/commands/exit/shared'
+import { authorizeAtSite, exitSiteId, holdsSuperAdmin, latestCaseFor, loadPerson, sitedOnlyFailure, OPEN_CASE_STATUSES } from '@/server/commands/exit/shared'
 import { describeImpact, exitImpact, type ExitImpact } from './impact'
 
 type Reader = Pick<Db, 'select'>
@@ -48,6 +48,9 @@ export async function findForExit(db: Reader, actor: Actor, employeeId: string):
       earlier && OPEN_CASE_STATUSES.includes(earlier.status as (typeof OPEN_CASE_STATUSES)[number]) ? 'Open their clearance case and work the checklist' : 'Nothing to do. To bring them back, use Rehire on their staff profile', { existingCaseId: earlier?.id })
   }
   if (base.person.isSelf) return block('You cannot mark yourself as Left (D-26)', 'Another Accommodation Admin or a Super Admin', 'Ask a colleague to do it')
+  // P-08 (proposed, pending client sign-off; `exit.sited_only`): the same refusal the command gives, shown before anyone clicks
+  const unsited = await sitedOnlyFailure({ actor, tx: db }, p.staffId, siteId)
+  if (unsited) return block(unsited.reason, unsited.owner ?? 'Super Admin', unsited.next ?? 'Ask a Super Admin to mark them as Left')
   if (p.userId) {
     const t = await loadTarget(db, p.userId)
     if (t && t.adminType && !isFullSuperAdmin(actor) && !targetManageableBy(actor, t)) {

@@ -66,6 +66,11 @@ export interface ItemRow {
   note: string | null
   archived: boolean
   overdue: Overdue
+  /**
+   * Did the latest movement of this item happen outside the site's key desk office hours? (P-03, proposed, pending client sign-off.)
+   * A fact for staff; never shown to a resident, and false for an item with no movement yet.
+   */
+  lastAfterHours: boolean
 }
 
 export interface ItemFilters {
@@ -75,6 +80,8 @@ export interface ItemFilters {
   /** Part of a code, or of the holder's name or employee ID. */
   q?: string
   overdue?: boolean
+  /** Only items whose latest movement was outside office hours (the desk list filter "Out of hours"). */
+  afterHours?: boolean
   includeArchived?: boolean
   limit?: number; offset?: number
 }
@@ -102,6 +109,15 @@ async function toRows(db: Reader, actor: Actor, raw: (typeof handoverItem.$infer
   const people = new Map<string, { name: string; employeeId: string }>()
   if (holderIds.length) for (const p of await db.select({ id: staffProfile.id, name: staffProfile.fullName, employeeId: staffProfile.employeeId }).from(staffProfile).where(inArray(staffProfile.id, holderIds))) people.set(p.id, p)
   const facts = await loadHolderFacts(db, holderIds)
+  // The latest movement of each item: was it outside office hours? Only staff see this (a resident sees what happened, not the desk's own control facts).
+  const scope = keysScope(actor)
+  const staffView = scope.kind === 'all' || (scope.kind === 'restricted' && scope.siteIds.length > 0)
+  const lastAfter = new Map<string, boolean>()
+  if (staffView) {
+    const latest = await db.select({ itemId: handoverEvent.itemId, afterHours: sql<boolean>`(array_agg(${handoverEvent.afterHours} order by ${handoverEvent.createdAt} desc, ${handoverEvent.id} desc))[1]` })
+      .from(handoverEvent).where(inArray(handoverEvent.itemId, raw.map(r => r.id))).groupBy(handoverEvent.itemId)
+    for (const e of latest) lastAfter.set(e.itemId, e.afterHours)
+  }
   const links = [...new Set(raw.map(r => r.replacedBy).filter((x): x is string => !!x))]
   const replacedBy = new Map<string, string>()
   if (links.length) for (const r of await db.select({ id: handoverItem.id, code: handoverItem.code }).from(handoverItem).where(inArray(handoverItem.id, links))) replacedBy.set(r.id, r.code)
@@ -119,7 +135,7 @@ async function toRows(db: Reader, actor: Actor, raw: (typeof handoverItem.$infer
       siteId: r.siteId, siteName: s.name, roomId: r.roomId, bedId: r.bedId, forLabel, status: r.status,
       holder: r.holderStaffId && p ? { id: r.holderStaffId, name: p.name, employeeId: p.employeeId, left: f?.left ?? false } : null,
       issuedAt: r.issuedAt?.toISOString() ?? null, dueBack: r.dueBack, replacedBy: r.replacedBy ? { id: r.replacedBy, code: replacedBy.get(r.replacedBy) ?? '' } : null,
-      replaces: replaces.get(r.id) ?? null, note: r.note, archived: !!r.archivedAt,
+      replaces: replaces.get(r.id) ?? null, note: r.note, archived: !!r.archivedAt, lastAfterHours: lastAfter.get(r.id) ?? false,
       overdue: overdueState({ status: r.status, dueBack: r.dueBack, timeZone: s.tz, now, graceDays: grace, holder: f }),
     } satisfies ItemRow
   })
@@ -145,6 +161,7 @@ export async function listItems(actor: Actor, f: ItemFilters = {}, now: Date = g
     )).orderBy(asc(handoverItem.siteId), asc(handoverItem.code)).limit(2000)
   let rows = await toRows(db, actor, raw.map(r => r.item), now)
   if (f.overdue) rows = rows.filter(r => r.overdue.overdue)
+  if (f.afterHours) rows = rows.filter(r => r.lastAfterHours)
   const rank = (r: ItemRow) => r.overdue.overdue ? 0 : r.status === 'lost' || r.status === 'damaged' ? 1 : r.status === 'issued' ? 2 : r.status === 'in_cabinet' ? 3 : 4
   rows.sort((a, b) => rank(a) - rank(b) || (b.overdue.daysOver - a.overdue.daysOver) || a.siteName.localeCompare(b.siteName) || a.code.localeCompare(b.code))
   const total = rows.length
@@ -153,7 +170,7 @@ export async function listItems(actor: Actor, f: ItemFilters = {}, now: Date = g
 
 /* ---------------- detail and history ---------------- */
 
-export interface EventView { id: string; kind: HandoverEventKind; at: string; person: { name: string; employeeId: string } | null; actor: string | null; onBehalf: boolean; note: string | null }
+export interface EventView { id: string; kind: HandoverEventKind; at: string; person: { name: string; employeeId: string } | null; actor: string | null; onBehalf: boolean; note: string | null; afterHours: boolean }
 export interface ItemDetail extends ItemRow { events: EventView[]; attachments: AttachmentView[]; abilities: Abilities }
 
 /** One item and its history, or undefined when it does not exist or is not the actor's to see (the same answer, AT-001). */
@@ -165,7 +182,7 @@ export async function getItemDetail(actor: Actor, id: string, now: Date = getClo
   const [row] = await toRows(db, actor, raw, now)
   const actorStaff = alias(staffProfile, 'actor_staff')
   const evs = await db.select({
-    id: handoverEvent.id, kind: handoverEvent.kind, at: handoverEvent.createdAt, onBehalf: handoverEvent.onBehalf, note: handoverEvent.note,
+    id: handoverEvent.id, kind: handoverEvent.kind, at: handoverEvent.createdAt, onBehalf: handoverEvent.onBehalf, note: handoverEvent.note, afterHours: handoverEvent.afterHours,
     pName: staffProfile.fullName, pEmp: staffProfile.employeeId, actorName: actorStaff.fullName, actorUser: userAccount.username,
   }).from(handoverEvent)
     .leftJoin(staffProfile, eq(staffProfile.id, handoverEvent.staffId))
@@ -175,7 +192,7 @@ export async function getItemDetail(actor: Actor, id: string, now: Date = getClo
   const own = !abilitiesAt(actor, row.siteId).move && !decide(actor, 'keys.view', { siteId: row.siteId }).allowed   // a resident: what happened, not who did it
   const events: EventView[] = evs.map(e => ({
     id: e.id, kind: e.kind, at: e.at.toISOString(), person: e.pName ? { name: e.pName, employeeId: e.pEmp ?? '' } : null,
-    actor: own ? null : e.actorName ?? e.actorUser ?? 'System', onBehalf: e.onBehalf, note: e.note,
+    actor: own ? null : e.actorName ?? e.actorUser ?? 'System', onBehalf: e.onBehalf, note: e.note, afterHours: own ? false : e.afterHours,
   }))
   return { ...row, events, attachments: await listAttachments(db, actor, 'handover_item', id), abilities: abilitiesAt(actor, row.siteId) }
 }

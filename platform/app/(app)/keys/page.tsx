@@ -6,7 +6,7 @@ import { decide } from '@/server/policy'
 import { Badge, Blocked, GlassCard, Icon, PageHeader, Person } from '@/ui'
 import { fmtDate } from '@/domain/time'
 import { Desk } from './_components/Desk'
-import { OverdueBadge, StatusChip } from './_components/bits'
+import { AfterHoursBadge, OverdueBadge, StatusChip } from './_components/bits'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Keys & assets · Grand Hyatt Staff Accommodation' }
@@ -16,6 +16,7 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 const FILTERS = [
   { id: '', label: 'Out now', status: 'outstanding' as const },
   { id: 'overdue', label: 'Overdue' },
+  { id: 'afterhours', label: 'Out of hours' },
   { id: 'cabinet', label: 'In the cabinet', status: 'in_cabinet' as const },
   { id: 'lost', label: 'Lost', status: 'lost' as const },
   { id: 'damaged', label: 'Damaged', status: 'damaged' as const },
@@ -33,6 +34,7 @@ export default async function Keys({ searchParams }: { searchParams: SP }) {
     q: q || undefined, limit: 200,
     status: 'status' in filter ? filter.status : undefined,
     overdue: filter.id === 'overdue' ? true : undefined,
+    afterHours: filter.id === 'afterhours' ? true : undefined,
   }
   const [{ rows, total }, overdue] = await Promise.all([listItems(actor, f), listItems(actor, { overdue: true, limit: 1 })])
   const canMove = canMoveKeys(actor)
@@ -56,7 +58,7 @@ export default async function Keys({ searchParams }: { searchParams: SP }) {
         <GlassCard strong flush title={filter.label} subtitle="Overdue first, then lost and damaged, then what is issued."
           footer={<span>{total} {total === 1 ? 'item' : 'items'}{total > rows.length ? `, showing ${rows.length}` : ''}</span>}>
           <div className="tbl-tool" style={{ paddingTop: 16 }} role="tablist" aria-label="Filter keys and assets">
-            {FILTERS.map(x => (
+            {FILTERS.filter(x => !(resident && x.id === 'afterhours')).map(x => (
               <Link key={x.id} href={href(x.id)} className={`btn ${x.id === filter.id ? 'primary' : 'secondary'} sm`} style={{ textDecoration: 'none' }} aria-current={x.id === filter.id ? 'true' : undefined}>
                 {x.label}{x.id === 'overdue' && overdue.total > 0 ? ` (${overdue.total})` : ''}
               </Link>
@@ -77,7 +79,7 @@ export default async function Keys({ searchParams }: { searchParams: SP }) {
                   <tr key={r.id}>
                     <td data-h="Item"><Link href={`/keys/${r.id}`} style={{ textDecoration: 'none', color: 'inherit' }}><b>{r.code}</b> <span className="muted body-sm">{r.itemTypeLabel}</span></Link></td>
                     <td data-h="For">{r.forLabel ?? <span className="muted">Not tied to a bed or room</span>}<div className="muted body-sm">{r.siteName}</div></td>
-                    <td data-h="Status"><span className="row wrap" style={{ gap: 6 }}><StatusChip status={r.status} /><OverdueBadge o={r.overdue} />{r.archived && <Badge tone="neutral" outline>Archived</Badge>}</span></td>
+                    <td data-h="Status"><span className="row wrap" style={{ gap: 6 }}><StatusChip status={r.status} /><OverdueBadge o={r.overdue} />{r.lastAfterHours && <AfterHoursBadge />}{r.archived && <Badge tone="neutral" outline>Archived</Badge>}</span></td>
                     {!resident && <td data-h="Held by">{r.holder ? <Person name={r.holder.name} sub={`${r.holder.employeeId}${r.holder.left ? ' · has left' : ''}`} /> : <span className="muted">In the cabinet</span>}</td>}
                     <td data-h="Due">{r.status === 'issued' ? (r.dueBack ? fmtDate(r.dueBack) : <span className="muted">With the stay</span>) : <span className="muted">-</span>}</td>
                   </tr>

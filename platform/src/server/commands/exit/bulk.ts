@@ -22,7 +22,7 @@ import { isFullSuperAdmin, loadTarget, lastSuperAdminFailure, targetManageableBy
 import { describeImpact, exitImpact } from '@/server/queries/exit/impact'
 import { getExitBatch, type ExitBatchView } from '@/server/queries/exit/bulk'
 import { markLeftIn } from './markLeft'
-import { authorizeAtSite, exitSiteId, holdsSuperAdmin, idSchema, latestCaseFor, loadPerson, reasonSchema, OPEN_CASE_STATUSES } from './shared'
+import { authorizeAtSite, exitSiteId, holdsSuperAdmin, idSchema, latestCaseFor, loadPerson, reasonSchema, sitedOnlyFailure, OPEN_CASE_STATUSES } from './shared'
 
 export const MAX_ROWS = 200
 
@@ -87,6 +87,8 @@ async function judge(c: CommandContext, employeeId: string): Promise<RowDraft> {
       return { ...base, outcome: 'blocked', message: `${p.fullName} is the last active Super Admin and can never be removed (D-27). Owner: Super Admin. Next: appoint another Super Admin first` }
     }
   }
+  const unsited = await sitedOnlyFailure(c, p.staffId, siteId)   // P-08 (proposed, pending client sign-off; `exit.sited_only`)
+  if (unsited) return { ...base, outcome: 'blocked', message: `${p.fullName} has never had a stay, reservation or request at any site: only a Super Admin can mark them as Left. Owner: Super Admin. Next: ask a Super Admin to include them` }
   const open = await latestCaseFor(c.tx, p.staffId)
   if (open && OPEN_CASE_STATUSES.includes(open.status as (typeof OPEN_CASE_STATUSES)[number])) {
     return { ...base, outcome: 'blocked', message: `${p.fullName} still has an open clearance case from an earlier exit. Owner: Accommodation Admin. Next: close it first` }

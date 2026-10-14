@@ -35,7 +35,7 @@ import { exitCascadeSteps } from './cascade'
 import { addBusinessDays } from './rules'
 import {
   authorizeAtSite, exitSiteId, exitStay, futureReservations, handoverLabel, holdsSuperAdmin, idSchema, itemTypeLabels, latestCaseFor, loadPerson, logEvent, reasonSchema,
-  OPEN_CASE_STATUSES, type PersonFacts,
+  OPEN_CASE_STATUSES, sitedOnlyFailure, type PersonFacts,
 } from './shared'
 
 export const markLeftInput = z.object({
@@ -95,6 +95,9 @@ export async function markLeftIn(c: CommandContext, i: MarkLeftInput, o: { passw
   // 2. nobody marks themselves Left (D-26)
   const self = notSelf(c, i.staffId, 'mark an employee as Left')
   if (self) return self
+  // 2b. P-08 (proposed, pending client sign-off; `exit.sited_only`, default off): a person with no stay, reservation or request ever: Super Admin only
+  const unsited = p0.employmentStatus === 'left' ? undefined : await sitedOnlyFailure(c, i.staffId, siteId0)   // a repeat on someone already Left stays harmless
+  if (unsited) return unsited
   // 3. an administrator's account is a Super Admin's to end (D-08), the same rule as deactivating it
   if (p0.userId) {
     const t = await loadTarget(c.tx, p0.userId)
@@ -120,6 +123,8 @@ export async function markLeftIn(c: CommandContext, i: MarkLeftInput, o: { passw
   if (siteId !== siteId0) {
     const again = authorizeAtSite(c, 'exit_clearance.mark_left', siteId)
     if (again) return again
+    const unsitedNow = await sitedOnlyFailure(c, i.staffId, siteId)
+    if (unsitedNow) return unsitedNow
   }
   const stillOpen = await latestCaseFor(c.tx, i.staffId)
   if (stillOpen && stillOpen.status !== 'cleared') {

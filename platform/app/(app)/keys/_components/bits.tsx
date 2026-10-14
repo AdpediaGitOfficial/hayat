@@ -23,6 +23,14 @@ export function OverdueBadge({ o }: { o: Overdue }) {
   return <Badge tone="danger">Overdue · {why}{o.daysOver > 0 ? ` · ${o.daysOver} day${o.daysOver === 1 ? '' : 's'}` : ''}</Badge>
 }
 
+/**
+ * The latest movement happened outside the key desk's office hours (P-03, proposed, pending client sign-off). A fact in the trail, not an error:
+ * amber, never the danger red, and it says so in words as well as colour.
+ */
+export function AfterHoursBadge() {
+  return <Badge tone="warning" outline>Out of hours</Badge>
+}
+
 export const typeLabel = (i: Pick<ItemRow, 'itemTypeLabel' | 'category'>) => i.itemTypeLabel || (i.category === 'key' ? 'Key' : 'Asset')
 
 /** "Due back Fri 30 Oct" or nothing. */

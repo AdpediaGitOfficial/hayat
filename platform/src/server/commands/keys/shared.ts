@@ -20,6 +20,7 @@ import { OCCUPYING_STAY_STATUSES } from '@/domain/enums'
 import { closeStayIfDone } from '@/server/stays-close'
 import { getConfig } from '@/server/config/registry'
 import { codeSchema, idSchema, optionalText, reasonSchema } from '@/server/commands/property/shared'
+import { deskHours } from './hours'
 
 export { codeSchema, idSchema, optionalText, reasonSchema, todayInZone } from '@/server/commands/property/shared'
 
@@ -133,20 +134,34 @@ export const itemSnap = (i: Pick<ItemRow, 'status' | 'holderStaffId' | 'code' | 
 /**
  * Appends to the item's history. The caller holds the item row lock, so the time can be made strictly increasing per item
  * (never earlier than the previous event): the history reads in the order things happened even when two movements share a clock tick.
+ * Every event records whether it happened outside the site's office hours (P-03, proposed, pending client sign-off): the caller may pass the
+ * answer it already has, otherwise it is worked out here from the item's site, so no path can forget it.
  */
-export async function logEvent(c: CommandContext, e: { itemId: string; kind: HandoverEventKind; staffId?: string | null; onBehalf?: boolean; note?: string | null }): Promise<string> {
+export async function logEvent(c: CommandContext, e: { itemId: string; kind: HandoverEventKind; staffId?: string | null; onBehalf?: boolean; note?: string | null; afterHours?: boolean }): Promise<string> {
   const [last] = await c.tx.select({ at: sql<Date | null>`max(${handoverEvent.createdAt})` }).from(handoverEvent).where(eq(handoverEvent.itemId, e.itemId))
   const prev = last?.at ? new Date(last.at).getTime() : 0
   const at = prev >= c.now.getTime() ? new Date(prev + 1) : c.now
+  let afterHours = e.afterHours
+  if (afterHours === undefined) {
+    const [it] = await c.tx.select({ siteId: handoverItem.siteId }).from(handoverItem).where(eq(handoverItem.id, e.itemId)).limit(1)
+    afterHours = it ? (await deskHours(c.tx, c.now, it.siteId)).afterHours : false
+  }
   const [row] = await c.tx.insert(handoverEvent).values({
-    itemId: e.itemId, kind: e.kind, staffId: e.staffId ?? null, actorUserId: c.user.id, onBehalf: e.onBehalf ?? false, note: e.note ?? null, createdAt: at,
+    itemId: e.itemId, kind: e.kind, staffId: e.staffId ?? null, actorUserId: c.user.id, onBehalf: e.onBehalf ?? false, note: e.note ?? null, afterHours, createdAt: at,
   }).returning({ id: handoverEvent.id })
   return row.id
 }
 
-/** Sets the status and the holder together (the database keeps issued and holder in step) and returns nothing else to remember. */
-export async function setState(c: CommandContext, id: string, to: { status: HandoverStatus; holderStaffId: string | null; issuedAt: Date | null; dueBack: string | null }, extra: { replacedBy?: string } = {}) {
-  await c.tx.update(handoverItem).set({ status: to.status, holderStaffId: to.holderStaffId, issuedAt: to.issuedAt, dueBack: to.dueBack, ...extra }).where(eq(handoverItem.id, id))
+/**
+ * The ONE writer of an item's state. Sets the status and the holder together (the database keeps issued and holder in step).
+ * `found: true` announces to the database guard (migration 0150) that a lost item is legitimately coming back; any other
+ * move of a lost or damaged item to the cabinet or a holder is refused there, whatever code tries it.
+ */
+export async function setState(c: CommandContext, id: string, to: { status: HandoverStatus; holderStaffId: string | null; issuedAt: Date | null; dueBack: string | null }, extra: { replacedBy?: string; found?: boolean } = {}) {
+  const { found, ...cols } = extra
+  if (found) await c.tx.execute(sql`select set_config('gh.item_found', ${id}, true)`)
+  await c.tx.update(handoverItem).set({ status: to.status, holderStaffId: to.holderStaffId, issuedAt: to.issuedAt, dueBack: to.dueBack, ...cols }).where(eq(handoverItem.id, id))
+  if (found) await c.tx.execute(sql`select set_config('gh.item_found', '', true)`)
 }
 
 /**

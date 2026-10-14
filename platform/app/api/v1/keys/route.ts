@@ -25,7 +25,7 @@ export const GET = route({
       siteId: u.get('siteId') ?? undefined, status: status && STATUSES.includes(status) ? (status as HandoverStatus | 'outstanding') : undefined,
       staffId: u.get('staffId') ?? undefined, bedId: u.get('bedId') ?? undefined, roomId: u.get('roomId') ?? undefined,
       category: category === 'key' || category === 'asset' ? category : undefined, code: u.get('code') ?? undefined, q: u.get('q') ?? undefined,
-      overdue: u.get('overdue') === 'true' ? true : undefined, includeArchived: u.get('includeArchived') === 'true', limit: num('limit'), offset: num('offset'),
+      overdue: u.get('overdue') === 'true' ? true : undefined, afterHours: u.get('afterHours') === 'true' ? true : undefined, includeArchived: u.get('includeArchived') === 'true', limit: num('limit'), offset: num('offset'),
     }))
   },
 })

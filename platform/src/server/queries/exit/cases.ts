@@ -14,7 +14,8 @@ import { listAttachments } from '@/server/attachments'
 import { loadCalendar } from '@/server/eligibility'
 import { outstandingHandovers } from '@/server/handover/outstanding'
 import { OWNER_LABEL, closeBlockers, deriveCaseStatus, nextActionFor, businessDaysAfter, type Blocker } from '@/server/commands/exit/rules'
-import { caseItems, exitStay, handoverLabel, itemTypeLabels, resolveItems, todayInZone, type StaySummary } from '@/server/commands/exit/shared'
+import { caseItems, exitStay, handoverLabel, itemOwnerDenied, itemTypeLabels, resolveItems, todayInZone, type StaySummary } from '@/server/commands/exit/shared'
+import { getConfig } from '@/server/config/registry'
 import { bed, room } from '@/server/db/schema'
 
 type Reader = Pick<Db, 'select'>
@@ -108,6 +109,11 @@ export interface ItemView {
   onBehalfOfName: string | null
   waiver: { byName: string | null; at: string | null; reason: string; evidence: string } | null
   handover: { code: string; status: string; category: 'key' | 'asset' } | null
+  /**
+   * A waived key or asset that is STILL lost, damaged or issued in the keys register (P-06 off: the waiver does not write it off).
+   * It keeps the stay open until Keys & assets retires or replaces it.
+   */
+  keyOpenAfterWaiver: { code: string; status: string; owner: string; next: string } | null
   lostOrDamaged: boolean
   next: string | null
   attachments: { id: string; filename: string; contentType: string; sizeBytes: number; createdAt: string; href: string }[]
@@ -134,6 +140,8 @@ export interface CaseView {
   /** Keys and assets the person holds now that are not on the case yet (they join when the case is next worked or closed). */
   notYetOnCase: { code: string; label: string; status: string }[]
   closeBlockers: Blocker[]
+  /** The proposed rules in force for this case (pending client sign-off), so the screen can say who owns which item and what a waiver does to a key. */
+  rules: { strictItemOwners: boolean; waiverWritesOffKey: boolean }
   events: EventView[]
   me: { canClose: boolean; canView: boolean; why?: string; owner?: string; next?: string; canWaiveAny: boolean }
 }
@@ -168,21 +176,24 @@ export async function getCase(db: Reader, actor: Actor, id: string, now: Date): 
 
   const isOpen = k.status !== 'cleared'
   const self = actor.staffId === k.staffId
+  const strict = await getConfig(db, 'clearance.strict_item_owners', k.siteId ?? undefined)           // P-07 (proposed, pending client sign-off)
+  const writesOff = await getConfig(db, 'clearance.waiver_writes_off_key', k.siteId ?? undefined)    // P-06 (proposed, pending client sign-off)
   const itemViews: ItemView[] = []
   for (const i of items) {
     const waivable = isOpen && i.effective !== 'done' && i.effective !== 'waived'
     const owner = i.effectiveOwnerRole
-    const workAction: Action = i.owner === 'Maintenance' ? 'exit_clearance.inspection_item' : 'exit_clearance.clearance_task'
     let me: ItemAbility
     if (!isOpen) me = { canWork: false, canWaive: false, canReopen: false, why: 'The case is cleared and cannot change', owner: 'Accommodation Admin', next: 'A new exit opens a new case' }
     else if (self) me = { canWork: false, canWaive: false, canReopen: false, why: 'Nobody works their own clearance (D-26)', owner: 'Another admin', next: 'Ask a colleague' }
     else {
-      const canWork = i.kind === 'checklist' && i.effective !== 'done' && i.effective !== 'waived' && can(actor, workAction, k.siteId)
+      const ownerDenied = itemOwnerDenied({ actor }, i.owner, k.siteId, strict)
+      const canWork = i.kind === 'checklist' && i.effective !== 'done' && i.effective !== 'waived' && !ownerDenied
       const canWaive = waivable && can(actor, 'exit_clearance.waive', k.siteId)
       const canReopen = i.kind === 'checklist' && (i.effective === 'done' || i.effective === 'outstanding') && i.status !== 'waived' && can(actor, 'exit_clearance.manage_case', k.siteId)
       let why: string | undefined, whyOwner: string | undefined, next: string | undefined
       if (!canWork && !canWaive && !canReopen && i.effective !== 'done' && i.effective !== 'waived') {
         if (i.kind === 'handover') { why = i.lostOrDamaged ? 'A lost or damaged key is never marked returned (D-73)' : 'Keys and assets are completed by recording the return'; whyOwner = OWNER_LABEL[owner]; next = nextActionFor({ ...i, kind: 'handover' }) }
+        else if (ownerDenied && ownerDenied.code === 'forbidden' && ownerDenied.detail) { why = ownerDenied.reason; whyOwner = ownerDenied.owner; next = ownerDenied.next }
         else { why = i.owner === 'Maintenance' ? 'Only the Maintenance Coordinator completes inspection items' : 'Only Reception, an Accommodation Admin or a Super Admin work clearance items'; whyOwner = OWNER_LABEL[owner]; next = 'Ask them, or ask a Policy Approver to waive it' }
       }
       me = { canWork, canWaive, canReopen, why, owner: whyOwner, next }
@@ -194,6 +205,9 @@ export async function getCase(db: Reader, actor: Actor, id: string, now: Date): 
       onBehalfOfName: i.onBehalfOfStaffId ? personNames.get(i.onBehalfOfStaffId) ?? null : null,
       waiver: i.status === 'waived' ? { byName: i.waivedBy ? userNames.get(i.waivedBy) ?? null : null, at: i.waivedAt?.toISOString() ?? null, reason: i.waiverReason ?? '', evidence: i.waiverEvidence ?? '' } : null,
       handover: i.live ? { code: i.live.code, status: i.live.status, category: i.live.category } : null,
+      keyOpenAfterWaiver: i.status === 'waived' && i.kind === 'handover' && i.live && ['issued', 'lost', 'damaged'].includes(i.live.status) && i.live.holderStaffId === k.staffId
+        ? { code: i.live.code, status: i.live.status, owner: OWNER_LABEL.AA, next: `Retire or replace ${i.live.code} in Keys & assets. The stay stays open until then` }
+        : null,
       lostOrDamaged: i.lostOrDamaged,
       next: isOpen && (i.effective === 'open' || i.effective === 'outstanding') ? nextActionFor({ ...i, kind: i.kind }) : null,
       attachments: atts.map(a => ({ id: a.id, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes, createdAt: a.createdAt.toISOString(), href: `/api/v1/attachments/${a.id}` })),
@@ -222,6 +236,7 @@ export async function getCase(db: Reader, actor: Actor, id: string, now: Date): 
     dueDate: k.dueDate, overdue: isOpen && today > k.dueDate, daysOverdue: isOpen && today > k.dueDate ? businessDaysAfter(k.dueDate, today, await loadCalendar(db, k.siteId ?? undefined)) : 0,
     clearedAt: k.clearedAt?.toISOString() ?? null, clearedByName: k.clearedBy ? userNames.get(k.clearedBy) ?? null : null,
     siteId: k.siteId, siteName: siteRow?.name ?? null, person: person!, stay: stayView, items: itemViews, notYetOnCase, closeBlockers: blockers,
+    rules: { strictItemOwners: strict, waiverWritesOffKey: writesOff },
     events: events.map(e => ({
       id: e.id, at: e.createdAt.toISOString(), kind: e.kind, itemId: e.itemId, itemLabel: e.itemId ? itemLabel.get(e.itemId) ?? null : null,
       actorName: e.actorUserId ? userNames.get(e.actorUserId) ?? null : null, onBehalfOfName: e.onBehalfOfStaffId ? personNames.get(e.onBehalfOfStaffId) ?? null : null, note: e.note,

@@ -90,13 +90,18 @@ async function toBase64(f: File): Promise<string> {
   return btoa(s)
 }
 
-export function ProblemForm({ item, kind, onDone }: { item: ItemRef; kind: 'lost' | 'damaged'; onDone?: () => void }) {
+/**
+ * `evidenceRequired` is the proposed rule P-04 (pending client sign-off, setting `keys.damage_evidence_required`): for a damaged item at least one
+ * file is needed. The server enforces it; the form only says so up front. A lost item stays note-only.
+ */
+export function ProblemForm({ item, kind, evidenceRequired, onDone }: { item: ItemRef; kind: 'lost' | 'damaged'; evidenceRequired?: boolean; onDone?: () => void }) {
   const { run, busy, err } = useCall()
   const [note, setNote] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [upErr, setUpErr] = useState<ApiFail>()
   const [uploading, setUploading] = useState(false)
   const uploaded = useRef(new Map<string, string>())   // a retry after a refusal does not upload the same file twice
+  const needFile = kind === 'damaged' && !!evidenceRequired
 
   async function submit() {
     setUpErr(undefined)
@@ -121,10 +126,10 @@ export function ProblemForm({ item, kind, onDone }: { item: ItemRef; kind: 'lost
       {(upErr || err) && <Problem f={(upErr ?? err)!} />}
       <Alert tone="warning" title={`A ${kind} item is never marked returned`} detail={kind === 'lost' ? 'It stays with the holder until it is found, replaced or retired.' : 'It stays with the holder until it is replaced or retired.'} />
       <Field label={kind === 'lost' ? 'What happened' : 'What is damaged'} hint="Required. Say where and when." error={err?.fields?.note}><Textarea value={note} onChange={e => setNote(e.target.value)} maxLength={500} /></Field>
-      <Field label={kind === 'damaged' ? 'Photos (evidence)' : 'Files (for example a report)'} optional hint="PNG, JPEG or PDF, up to 5 MB each." error={upErr?.fields?.dataBase64}>
+      <Field label={kind === 'damaged' ? 'Photos (evidence)' : 'Files (for example a report)'} optional={!needFile} hint={needFile ? 'Required: at least one photo or file. PNG, JPEG or PDF, up to 5 MB each.' : 'PNG, JPEG or PDF, up to 5 MB each.'} error={upErr?.fields?.dataBase64 ?? err?.fields?.attachmentIds}>
         <input type="file" multiple accept="image/png,image/jpeg,application/pdf" onChange={e => setFiles(Array.from(e.target.files ?? []))} />
       </Field>
-      <div><Button variant="danger" type="submit" block tall disabled={busy || uploading || note.trim().length < 3}>Record {item.code} as {kind}</Button></div>
+      <div><Button variant="danger" type="submit" block tall disabled={busy || uploading || note.trim().length < 3 || (needFile && files.length === 0)}>Record {item.code} as {kind}</Button></div>
     </form>
   )
 }
@@ -197,8 +202,10 @@ export function ArchiveForm({ item, onDone }: { item: ItemRef; onDone?: () => vo
 
 type Mode = 'issue' | 'return' | 'lost' | 'damaged' | 'found' | 'retire' | 'replace' | 'archive'
 
-export function ItemActions({ item, holder, holderLeft, today, canMove, canManage }: {
+export function ItemActions({ item, holder, holderLeft, today, canMove, canManage, damageEvidenceRequired }: {
   item: ItemRef; holder?: { id: string; name: string }; holderLeft?: boolean; today: string; canMove: boolean; canManage: boolean
+  /** P-04, proposed and pending client sign-off: a damaged item needs a photo or file. */
+  damageEvidenceRequired?: boolean
 }) {
   const [mode, setMode] = useState<Mode>()
   const done = () => setMode(undefined)
@@ -227,11 +234,30 @@ export function ItemActions({ item, holder, holderLeft, today, canMove, canManag
       {mode === 'issue' && <IssueForm item={item} today={today} onDone={done} />}
       {mode === 'return' && <ReturnForm item={item} holder={holder?.name} holderLeft={holderLeft} onDone={done} />}
       {mode === 'lost' && <ProblemForm item={item} kind="lost" onDone={done} />}
-      {mode === 'damaged' && <ProblemForm item={item} kind="damaged" onDone={done} />}
+      {mode === 'damaged' && <ProblemForm item={item} kind="damaged" evidenceRequired={damageEvidenceRequired} onDone={done} />}
       {mode === 'found' && <FoundForm item={item} hasHolder={!!holder} onDone={done} />}
       {mode === 'replace' && <ReplaceForm item={item} holder={holder?.name} onDone={done} />}
       {mode === 'retire' && <RetireForm item={item} onDone={done} />}
       {mode === 'archive' && <ArchiveForm item={item} onDone={done} />}
     </div>
+  )
+}
+
+/* ---------------- a resident reports their own key lost (P-05: proposed, pending client sign-off) ---------------- */
+
+/**
+ * Shown only when the setting `keys.resident_may_report_lost` is on (the server component passes it; the API refuses anyway when it is off).
+ * The resident can say "lost" and nothing else: never returned, never found.
+ */
+export function ReportLostForm({ item, onDone }: { item: ItemRef; onDone?: () => void }) {
+  const { run, busy, err } = useCall()
+  const [note, setNote] = useState('')
+  return (
+    <form className="form" noValidate onSubmit={e => { e.preventDefault(); void run('POST', `${P}/${item.id}/report-lost`, { note }, () => { setNote(''); onDone?.() }) }}>
+      {err && <Problem f={err} />}
+      <Alert tone="warning" title="Tell us if you have lost it" detail="Reception and the Accommodation Admin are told at once. It stays on your record until it is found, replaced or retired. Only Reception can mark it found or returned." />
+      <Field label="What happened" hint="Required. Say where and when you last had it." error={err?.fields?.note}><Textarea value={note} onChange={e => setNote(e.target.value)} maxLength={500} /></Field>
+      <div><Button variant="danger" type="submit" block tall disabled={busy || note.trim().length < 3}>Report {item.code} as lost</Button></div>
+    </form>
   )
 }
