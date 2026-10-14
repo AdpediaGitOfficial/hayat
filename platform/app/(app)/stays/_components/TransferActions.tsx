@@ -14,7 +14,12 @@ export function TransferActions({ t }: { t: TransferListRow }) {
   const [via, setVia] = useState<'in_person' | 'phone' | 'written'>('in_person')
   const base = `/api/v1/stays/transfers/${t.id}`
   const open = t.status === 'requested' || t.status === 'failed'
-  const needsDest = t.kind === 'transfer' && open
+  // Only whoever gives the DESTINATION site's key chooses the bed (for a same-site move that is the one approver, as before).
+  const needsDest = t.kind === 'transfer' && open && t.can.chooseBed
+  const gives = t.keys.source.viewerCanGive && t.keys.destination.viewerCanGive ? 'both' : t.keys.source.viewerCanGive ? 'source' : 'destination'
+  const approveLabel = !t.crossSite ? (t.status === 'failed' ? 'Approve with this bed' : `Approve ${t.kind}`)
+    : gives === 'both' ? `Approve for both sites` : gives === 'source' ? `Approve: let them leave ${t.siteName}` : `Approve: take them into ${t.destinationSiteName}`
+  const otherSideWaits = t.crossSite && ((gives === 'source' && !t.keys.destination.approved) || (gives === 'destination' && !t.keys.source.approved))
   const missing = t.consent ? [!t.consent.a && t.name, !t.consent.b && t.otherName].filter(Boolean) as string[] : []
 
   return (
@@ -58,10 +63,11 @@ export function TransferActions({ t }: { t: TransferListRow }) {
           )}
           <div className="row wrap">
             <Button variant="primary" size="sm" disabled={busy || (needsDest && !dest) || missing.length > 0} onClick={() => run(`${base}/approve`, { destinationBedId: needsDest ? dest || null : null })}>
-              {t.status === 'failed' ? 'Approve with this bed' : `Approve ${t.kind}`}
+              {approveLabel}
             </Button>
             <Button size="sm" onClick={() => setRejecting(true)}>Reject</Button>
           </div>
+          {otherSideWaits && <Alert tone="info" title="Your approval is only half of it" detail={`${gives === 'source' ? `The Accommodation Admin of ${t.destinationSiteName}` : `The Accommodation Admin of ${t.siteName}`} has to approve too${gives === 'source' && t.kind === 'transfer' ? ' and chooses the bed there' : ''}. Nobody moves until both sites have approved.`} />}
         </>
       )}
       {t.can.approve && open && rejecting && (
@@ -73,7 +79,10 @@ export function TransferActions({ t }: { t: TransferListRow }) {
           </div>
         </>
       )}
-      {!t.can.approve && t.status === 'requested' && <Alert tone="info" title="Waiting for approval" detail="An Accommodation Admin who is not part of this request decides it. If you raised it, you cannot approve it (separation of duties)." />}
+      {!t.can.approve && t.status === 'requested' && !t.crossSite && <Alert tone="info" title="Waiting for approval" detail="An Accommodation Admin who is not part of this request decides it. If you raised it, you cannot approve it (separation of duties)." />}
+      {!t.can.approve && t.status === 'requested' && t.crossSite && (
+        <Alert tone="info" title="You cannot approve this one" detail="Each site's Accommodation Admin gives their own approval, and nobody approves a move they raised or are part of (separation of duties)." />
+      )}
 
       {t.can.execute && (
         <div className="row wrap">

@@ -25,20 +25,25 @@ export default async function Transfers({ searchParams }: { searchParams: Record
   return (
     <>
       <PageHeader crumbs={['Accommodation', 'Stays']} title="Transfers & swaps"
-        summary="Moves are approved by an Accommodation Admin who is not part of the request, then carried out by Reception in one step. If the new bed is no longer free, nobody moves and the request says what to do next."
+        summary="Moves are approved by an Accommodation Admin who is not part of the request, then carried out by Reception in one step. A move to another site needs the Accommodation Admin of each site to approve. If the new bed is no longer free, nobody moves and the request says what to do next."
         actions={<><Link href={all ? '/stays/transfers' : '/stays/transfers?all=1'} className="btn secondary" style={{ textDecoration: 'none' }}>{all ? 'Show open only' : 'Show all'}</Link><Link href="/stays" className="btn secondary" style={{ textDecoration: 'none' }}>Back to stays</Link></>} />
       <div className="grid two">
         <div className="stack">
           {rows.length === 0 && <GlassCard><div className="tbl-empty">{all ? 'No transfers or swaps yet.' : 'Nothing is waiting. Residents can ask to move from their stay page.'}</div></GlassCard>}
           {rows.map(t => (
             <GlassCard key={t.id} title={t.kind === 'swap' ? `Swap: ${t.name} and ${t.otherName}` : `Move: ${t.name}`} subtitle={t.reason}
-              actions={<Badge tone={TONE[t.status] ?? 'neutral'}>{LABEL[t.status] ?? t.status}</Badge>}>
+              actions={<><Badge tone={TONE[t.status] ?? 'neutral'}>{t.crossSite && t.status === 'requested' && t.keys.source.approved !== t.keys.destination.approved ? 'Half approved' : LABEL[t.status] ?? t.status}</Badge>{t.crossSite && <Badge tone="info" outline>Between sites</Badge>}</>}>
               <dl className="kv" style={{ marginBottom: 12 }}>
                 <dt>From</dt><dd>{t.fromBedLabel}</dd>
-                <dt>To</dt><dd>{t.kind === 'swap' ? `${t.otherName}'s bed (they take yours)` : t.toBedLabel ?? 'Any suitable bed: the Accommodation Admin chooses'}</dd>
+                <dt>To</dt><dd>{t.kind === 'swap' ? `${t.otherName}'s bed (they take yours)` : t.toBedLabel ?? (t.crossSite ? `Any suitable bed in ${t.destinationSiteName}: the Accommodation Admin there chooses` : 'Any suitable bed: the Accommodation Admin chooses')}</dd>
                 {t.neededBy && <><dt>Needed by</dt><dd>{fmtDate(t.neededBy)}</dd></>}
+                {t.crossSite && <>
+                  <dt>Out of {t.siteName}</dt><dd>{t.keys.source.approved ? <Badge tone="success">Approved by the Accommodation Admin</Badge> : <Badge tone="brand">Waiting for the Accommodation Admin of {t.siteName}</Badge>}</dd>
+                  <dt>Into {t.destinationSiteName}</dt><dd>{t.keys.destination.approved ? <Badge tone="success">Approved by the Accommodation Admin</Badge> : <Badge tone="brand">Waiting for the Accommodation Admin of {t.destinationSiteName}</Badge>}</dd>
+                </>}
                 {t.decisionReason && <><dt>Decision</dt><dd>{t.decisionReason}</dd></>}
               </dl>
+              {t.waiting && t.status !== 'failed' && t.crossSite && !t.can.approve && <div style={{ marginBottom: 12 }}><Blocked why={t.waiting.text} owner={t.waiting.owner} next={t.waiting.next} /></div>}
               {t.status === 'failed' && t.failureReason && <div style={{ marginBottom: 12 }}><Blocked why={t.failureReason} owner="Accommodation Admin" next={t.failureNext ?? 'Choose another destination bed and approve the move again'} /></div>}
               <TransferActions t={t} />
             </GlassCard>

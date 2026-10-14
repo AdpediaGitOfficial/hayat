@@ -39,7 +39,10 @@ export const extensionRequest = pgTable('extension_request', {
 export const transferRequest = pgTable('transfer_request', {
   id: id(),
   kind: text('kind').$type<'transfer' | 'swap'>().notNull(),
+  /** The SOURCE site (for a swap: the site of the first stay). */
   siteId: uuid('site_id').notNull(),
+  /** The site the resident moves INTO (migration 0130, D-104; for a swap: the site of the second stay). Equal to siteId for a same-site move. */
+  destinationSiteId: uuid('destination_site_id').notNull(),
   stayId: uuid('stay_id').notNull(),
   staffId: uuid('staff_id').notNull(),
   fromBedId: uuid('from_bed_id').notNull(),
@@ -60,6 +63,12 @@ export const transferRequest = pgTable('transfer_request', {
   consentBBy: uuid('consent_b_by'),
   consentBVia: text('consent_b_via').$type<ConsentVia>(),
   consentBNote: text('consent_b_note'),
+  /** The two keys (D-104): an Accommodation Admin of the source site and one of the destination site. A same-site decision gives both. */
+  sourceApprovedBy: uuid('source_approved_by'),
+  sourceApprovedAt: tz('source_approved_at'),
+  destinationApprovedBy: uuid('destination_approved_by'),
+  destinationApprovedAt: tz('destination_approved_at'),
+  /** Who gave the LAST key, and when (the request is Approved from then on). */
   decidedBy: uuid('decided_by'),
   decidedAt: tz('decided_at'),
   decisionReason: text('decision_reason'),

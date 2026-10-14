@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePage } from '@/server/auth/page'
-import { getStayDetail, stayAbilities, transferOptions } from '@/server/queries/stays/stays'
+import { getStayDetail, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
 import { Alert, Badge, Blocked, GlassCard, PageHeader, Status } from '@/ui'
 import { fmtDate, fmtDateLong } from '@/domain/time'
 import { FlagBadge } from '../_components/FlagBadge'
@@ -20,7 +20,9 @@ export default async function StayPage({ params }: { params: { id: string } }) {
   const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId })
   const active = d.status === 'active'
   const ctx = { id: d.id, name: d.name, from: d.from, to: d.to, active }
-  const options = active && ab.requestTransfer && !d.openTransfer ? await transferOptions(actor, d.id) : []
+  const canAsk = active && ab.requestTransfer && !d.openTransfer
+  const options = canAsk ? await transferOptions(actor, d.id) : []
+  const sites = canAsk ? await transferSites(d.siteId) : []
   const today = new Date(cur.rc.clock.now()).toISOString().slice(0, 10)
   const ext = d.openExtension
   const canDecideExt = !!ext && (ext.beyondPolicy ? ab.approveExtensionBeyond : ab.approveExtension) && actor.staffId !== d.staffId && actor.staffId !== ext.requestedByStaffId
@@ -59,9 +61,18 @@ export default async function StayPage({ params }: { params: { id: string } }) {
           )}
 
           {d.openTransfer && (
-            <GlassCard title={d.openTransfer.kind === 'swap' ? 'Bed swap waiting' : 'Move waiting'} subtitle={d.openTransfer.reason}>
-              <div className="row wrap"><Status s={d.openTransfer.status === 'approved' ? 'Approved' : d.openTransfer.status === 'failed' ? 'Failed' : 'Pending'} label={d.openTransfer.status === 'approved' ? 'Approved, waiting for Reception' : d.openTransfer.status === 'failed' ? 'Could not be carried out: nobody moved' : 'Waiting for approval'} />
+            <GlassCard title={d.openTransfer.kind === 'swap' ? 'Bed swap waiting' : d.openTransfer.crossSite ? `Move to ${d.openTransfer.toSiteName} waiting` : 'Move waiting'} subtitle={d.openTransfer.reason}>
+              <div className="row wrap"><Status s={d.openTransfer.status === 'approved' ? 'Approved' : d.openTransfer.status === 'failed' ? 'Failed' : 'Pending'} label={d.openTransfer.status === 'approved' ? 'Approved, waiting for Reception' : d.openTransfer.status === 'failed' ? 'Could not be carried out: nobody moved' : d.openTransfer.waitingFor ? `Waiting for ${d.openTransfer.waitingFor}` : 'Waiting for approval'} />
                 <Link href="/stays/transfers">Open transfers</Link></div>
+              {d.openTransfer.crossSite && (
+                <dl className="kv" style={{ marginTop: 8 }}>
+                  <dt>{d.openTransfer.fromSiteName}</dt><dd>{d.openTransfer.keys.source.approved ? 'Approved (lets the resident go)' : 'Not yet approved'}</dd>
+                  <dt>{d.openTransfer.toSiteName}</dt><dd>{d.openTransfer.keys.destination.approved ? 'Approved (takes the resident)' : 'Not yet approved'}</dd>
+                </dl>
+              )}
+              {d.openTransfer.crossSite && d.openTransfer.waitingFor && d.openTransfer.status !== 'failed' && (
+                <div style={{ marginTop: 8 }}><Blocked why={`Waiting for ${d.openTransfer.waitingFor}`} owner="Accommodation Admin of the site that has not approved yet" next="They approve it from their approvals inbox. Nobody moves until both sites have approved" /></div>
+              )}
               {d.openTransfer.failureReason && <div style={{ marginTop: 8 }}><Blocked why={d.openTransfer.failureReason} owner="Accommodation Admin" next="Choose another destination bed and approve the move again" /></div>}
             </GlassCard>
           )}
@@ -70,7 +81,7 @@ export default async function StayPage({ params }: { params: { id: string } }) {
             {d.extensions.length + d.transfers.length + d.checkouts.length === 0 ? <p className="muted">Nothing has been requested for this stay.</p> : (
               <ul className="list-plain" aria-label="Stay history">
                 {d.extensions.map(e => <li key={e.id} style={{ flexWrap: 'wrap' }}><span style={{ flex: 1, minWidth: 180 }}>Extension until {fmtDate(e.newEnd)}<span className="muted body-sm" style={{ display: 'block' }}>{e.decisionReason ?? e.reason ?? ''}</span></span><Badge tone={e.status === 'approved' ? 'success' : e.status === 'requested' ? 'brand' : 'neutral'}>{e.status}</Badge></li>)}
-                {d.transfers.map(t => <li key={t.id} style={{ flexWrap: 'wrap' }}><span style={{ flex: 1, minWidth: 180 }}>{t.kind === 'swap' ? 'Bed swap' : 'Move'}{t.toBedLabel ? ` to ${t.toBedLabel}` : ''}<span className="muted body-sm" style={{ display: 'block' }}>{t.failureReason ?? t.reason}</span></span><Badge tone={t.status === 'executed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'rejected' || t.status === 'cancelled' ? 'neutral' : 'brand'}>{t.status}</Badge></li>)}
+                {d.transfers.map(t => <li key={t.id} style={{ flexWrap: 'wrap' }}><span style={{ flex: 1, minWidth: 180 }}>{t.kind === 'swap' ? 'Bed swap' : 'Move'}{t.crossSite ? ` (${t.fromSiteName} to ${t.toSiteName})` : ''}{t.toBedLabel ? ` to ${t.toBedLabel}` : ''}<span className="muted body-sm" style={{ display: 'block' }}>{t.failureReason ?? t.reason}</span></span><Badge tone={t.status === 'executed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'rejected' || t.status === 'cancelled' ? 'neutral' : 'brand'}>{t.status}</Badge></li>)}
                 {d.checkouts.map(c => <li key={c.id} style={{ flexWrap: 'wrap' }}><span style={{ flex: 1, minWidth: 180 }}>Checkout on {fmtDate(c.departureDate)}</span><Badge tone={c.status === 'completed' ? 'success' : c.status === 'cancelled' ? 'neutral' : 'brand'}>{c.status}</Badge></li>)}
               </ul>
             )}
@@ -80,7 +91,7 @@ export default async function StayPage({ params }: { params: { id: string } }) {
         <div className="stack" style={{ alignSelf: 'start' }}>
           {!active && <Alert tone="info" title={`This stay is ${STATUS[d.status]?.toLowerCase() ?? d.status}`} detail="Nothing more can be requested for it." />}
           {active && ab.requestExtension && !ext && d.to && <ExtensionForm stay={ctx} policyDays={d.policyDays} canOpenTransfer={ab.requestTransfer && !ab.mine} />}
-          {active && ab.requestTransfer && !d.openTransfer && <TransferForm stay={ctx} options={options} />}
+          {active && ab.requestTransfer && !d.openTransfer && <TransferForm stay={ctx} options={options} sites={sites} currentSiteName={d.siteName} />}
           {active && ab.requestCheckout && !d.openCheckout && <CheckoutRequestForm stay={ctx} today={today} />}
           {active && ab.mine && d.openCheckout && <GlassCard title="Checkout requested" subtitle={`Leaving on ${fmtDate(d.openCheckout.departureDate)}`}><div className="row wrap"><Status s={d.openCheckout.status === 'acknowledged' ? 'Accepted' : 'Pending'} label={d.openCheckout.status === 'acknowledged' ? 'Reception has confirmed' : 'Waiting for Reception to confirm'} /><CancelRequest kind="checkout" id={d.openCheckout.id} /></div></GlassCard>}
           {active && ab.processCheckout && <ProcessCheckout stay={ctx} requested={d.openCheckout} />}

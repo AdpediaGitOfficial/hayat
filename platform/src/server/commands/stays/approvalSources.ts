@@ -7,7 +7,7 @@
  * Voluntary checkout has no approval (D-63): Reception processes it, and its acknowledgement reminder is the stays sweep.
  */
 import { eq, inArray } from 'drizzle-orm'
-import { staffProfile } from '@/server/db/schema'
+import { site, staffProfile } from '@/server/db/schema'
 import { extensionRequest, transferRequest } from '@/server/db/schema.stays'
 import { registerApprovalSource } from '@/server/approvals/registry'
 import type { ApprovalDraft, ApprovalSource, Decider } from '@/server/approvals/types'
@@ -30,19 +30,37 @@ async function names(db: Parameters<ApprovalSource['listPending']>[0], ids: stri
   return new Map(rows.map(r => [r.id, r.name]))
 }
 
-const transferSource = (kind: 'transfer' | 'swap'): ApprovalSource => ({
-  kind,
+/**
+ * Transfers and swaps. A same-site request is ONE inbox item at its site. A cross-site request (D-104) needs two keys, so it is one
+ * item PER MISSING KEY, each at the site that owns it, and "mine" is true only for someone who can approve that side:
+ *   kind `transfer` / `swap`        the source site's key (a same-site request is this item too),
+ *   kind `transfer_in` / `swap_in`  the destination site's key (and, for a transfer, the choice of bed there).
+ * The items are separate kinds because the reminder sweep keys its notifications by kind and reference, so each site is reminded
+ * and escalated on its own clock. Both clocks start when the request was raised (or failed); one key given does not reset the other.
+ */
+const transferSource = (kind: 'transfer' | 'swap', side: 'source' | 'destination'): ApprovalSource => ({
+  kind: side === 'source' ? kind : `${kind}_in`,
   async listPending(db) {
     const rows = await db.select().from(transferRequest).where(eq(transferRequest.kind, kind))
-    const open = rows.filter(r => r.status === 'requested' || r.status === 'failed')
+    const open = rows.filter(r => (r.status === 'requested' || r.status === 'failed')
+      && (side === 'source' ? !r.sourceApprovedAt : !!r.destinationSiteId && r.destinationSiteId !== r.siteId && !r.destinationApprovedAt))
     const who = await names(db, open.flatMap(r => [r.staffId, ...(r.otherStaffId ? [r.otherStaffId] : [])]))
+    const siteIds = [...new Set(open.flatMap(r => [r.siteId, r.destinationSiteId]))]
+    const siteName = new Map((siteIds.length ? await db.select({ id: site.id, name: site.name }).from(site).where(inArray(site.id, siteIds)) : []).map(s => [s.id, s.name]))
     return open.map((r): ApprovalDraft => {
       const failed = r.status === 'failed'
+      const cross = r.destinationSiteId !== r.siteId
+      const [from, to] = [siteName.get(r.siteId) ?? 'the source site', siteName.get(r.destinationSiteId) ?? 'the destination site']
+      const person = who.get(r.staffId) ?? 'resident'
+      const route = cross ? (side === 'source' ? ` (move out of ${from}, into ${to})` : ` (move into ${to}, out of ${from})`) : ''
       return {
-        kind, ref: r.id, siteId: r.siteId, subjectStaffIds: [r.staffId, ...(r.otherStaffId ? [r.otherStaffId] : [])],
+        kind: side === 'source' ? kind : `${kind}_in`, ref: r.id, siteId: side === 'source' ? r.siteId : r.destinationSiteId,
+        subjectStaffIds: [r.staffId, ...(r.otherStaffId ? [r.otherStaffId] : [])],
         raisedByStaffId: r.requestedByStaffId ?? undefined,
-        title: kind === 'swap' ? `Bed swap: ${who.get(r.staffId) ?? 'resident'} and ${who.get(r.otherStaffId ?? '') ?? 'resident'}` : `${failed ? 'Transfer failed, choose another bed' : 'Transfer'}: ${who.get(r.staffId) ?? 'resident'}`,
-        sub: failed ? `Nothing moved. ${r.failureReason ?? ''}` : r.reason,
+        title: kind === 'swap'
+          ? `Bed swap${route}: ${person} and ${who.get(r.otherStaffId ?? '') ?? 'resident'}`
+          : `${failed ? 'Transfer failed, choose another bed' : 'Transfer'}${route}: ${person}`,
+        sub: failed ? `Nothing moved. ${r.failureReason ?? ''}` : cross && side === 'destination' && kind === 'transfer' ? `${r.reason} (you choose the bed in ${to})` : r.reason,
         // A failed execution restarts the clock: the Accommodation Admin has to choose again.
         createdAt: (failed && r.failedAt ? r.failedAt : r.createdAt).getTime(),
         deciders: primaryAndBackup('transfers_swaps.approve'),
@@ -52,8 +70,10 @@ const transferSource = (kind: 'transfer' | 'swap'): ApprovalSource => ({
   },
 })
 
-registerApprovalSource(transferSource('transfer'))
-registerApprovalSource(transferSource('swap'))
+registerApprovalSource(transferSource('transfer', 'source'))
+registerApprovalSource(transferSource('swap', 'source'))
+registerApprovalSource(transferSource('transfer', 'destination'))
+registerApprovalSource(transferSource('swap', 'destination'))
 
 registerApprovalSource({
   kind: 'extension',

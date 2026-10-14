@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import type { CurrentUser } from '@/server/auth/current'
-import { getStayDetail, listStays, stayAbilities, transferOptions } from '@/server/queries/stays/stays'
+import { getStayDetail, listStays, stayAbilities, transferOptions, transferSites } from '@/server/queries/stays/stays'
 import { Alert, Blocked, GlassCard, Status } from '@/ui'
 import { fmtDate, fmtDateLong } from '@/domain/time'
 import { FlagBadge } from './FlagBadge'
@@ -31,7 +31,9 @@ export async function renderMyStay(cur: CurrentUser): Promise<ReactNode | null> 
   const ab = stayAbilities(actor, { siteId: d.siteId, staffId: d.staffId })
   const active = d.status === 'active'
   const ctx = { id: d.id, name: d.name, from: d.from, to: d.to, active }
-  const options = active && ab.requestTransfer && !d.openTransfer ? await transferOptions(actor, d.id, now) : []
+  const canAsk = active && ab.requestTransfer && !d.openTransfer
+  const options = canAsk ? await transferOptions(actor, d.id, now) : []
+  const sites = canAsk ? await transferSites(d.siteId) : []
   const today = now.toISOString().slice(0, 10)
   const ext = d.openExtension
   const tr = d.openTransfer
@@ -60,8 +62,17 @@ export async function renderMyStay(cur: CurrentUser): Promise<ReactNode | null> 
         </GlassCard>
       )}
       {tr && (
-        <GlassCard title={tr.kind === 'swap' ? 'Bed swap proposed' : 'Move requested'} subtitle={tr.reason}>
-          <div className="row wrap"><Status s={tr.status === 'approved' ? 'Approved' : tr.status === 'failed' ? 'Failed' : 'Pending'} label={tr.status === 'approved' ? 'Approved: Reception will arrange the move' : tr.status === 'failed' ? 'Could not be done: you stay where you are' : 'Waiting for an Accommodation Admin'} /></div>
+        <GlassCard title={tr.kind === 'swap' ? 'Bed swap proposed' : tr.crossSite ? `Move to ${tr.toSiteName} requested` : 'Move requested'} subtitle={tr.reason}>
+          <div className="row wrap"><Status s={tr.status === 'approved' ? 'Approved' : tr.status === 'failed' ? 'Failed' : 'Pending'} label={tr.status === 'approved' ? 'Approved: Reception will arrange the move' : tr.status === 'failed' ? 'Could not be done: you stay where you are' : tr.waitingFor ? `Waiting for ${tr.waitingFor}` : 'Waiting for an Accommodation Admin'} /></div>
+          {tr.crossSite && (
+            <dl className="kv" style={{ marginTop: 8 }}>
+              <dt>{tr.fromSiteName}</dt><dd>{tr.keys.source.approved ? 'Agreed to let you go' : 'Not yet approved'}</dd>
+              <dt>{tr.toSiteName}</dt><dd>{tr.keys.destination.approved ? 'Agreed to take you' : 'Not yet approved'}</dd>
+            </dl>
+          )}
+          {tr.crossSite && tr.status === 'requested' && (
+            <p className="muted body-sm">Owner: {tr.waitingFor ? tr.waitingFor.replace(/^./, c => c.toUpperCase()) : 'Accommodation Admin'}. You stay where you are until both sites have approved and Reception moves you. You will be notified; no action needed.</p>
+          )}
           {tr.kind === 'swap' && tr.status === 'requested' && <p className="body-sm"><Link href="/stays/transfers">Answer the swap proposal</Link>: it only goes ahead if you both agree.</p>}
           {tr.failureReason && <div style={{ marginTop: 8 }}><Blocked why={tr.failureReason} owner="Accommodation Admin" next="They will choose another bed and contact you" /></div>}
           <div style={{ marginTop: 8 }}><CancelRequest kind="transfer" id={tr.id} /></div>
@@ -76,7 +87,7 @@ export async function renderMyStay(cur: CurrentUser): Promise<ReactNode | null> 
       )}
 
       {active && ab.requestExtension && !ext && d.to && <ExtensionForm stay={ctx} policyDays={d.policyDays} canOpenTransfer={false} />}
-      {active && ab.requestTransfer && !tr && <TransferForm stay={ctx} options={options} />}
+      {active && ab.requestTransfer && !tr && <TransferForm stay={ctx} options={options} sites={sites} currentSiteName={d.siteName} />}
       {active && ab.requestCheckout && !co && <CheckoutRequestForm stay={ctx} today={today} />}
     </div>
   )

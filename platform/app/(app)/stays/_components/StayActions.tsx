@@ -9,6 +9,8 @@ import { fmtDate } from '@/domain/time'
 import { dayDiff } from '@/server/commands/stays/rules'
 import type { RequestExtensionOut } from '@/server/commands/stays/extension'
 import type { BedSuggestion } from '@/server/allocation'
+import type { DestinationOptions, DestinationSite } from '@/server/queries/stays/stays'
+import { api, type ApiFail } from '@/ui/api'
 import { Problem, useCall } from './call'
 
 export interface StayCtx { id: string; name: string; from: string; to: string | null; active: boolean }
@@ -68,22 +70,74 @@ export function Clash({ stayId, extensionId, clash, canOpenTransfer }: { stayId:
 
 /* ---------------- transfer ---------------- */
 
-export function TransferForm({ stay, options }: { stay: StayCtx; options: BedSuggestion[] }) {
+/**
+ * Ask to move to another bed, in this site or ANOTHER one (D-104). Choose the site first, then a bed of that site; beds the person may
+ * not have there are listed with the reason in plain words (never disabled without saying why). A move into another site needs the
+ * Accommodation Admin of each site, and the form says so before sending.
+ */
+export function TransferForm({ stay, options, sites = [], currentSiteName = 'this site' }: { stay: StayCtx; options: BedSuggestion[]; sites?: DestinationSite[]; currentSiteName?: string }) {
   const { run, busy, err } = useCall()
+  const current = sites.find(s => s.current)
+  const [siteId, setSiteId] = useState(current?.id ?? '')
   const [dest, setDest] = useState('')
   const [reason, setReason] = useState('')
+  const [loaded, setLoaded] = useState<DestinationOptions>()
+  const [loading, setLoading] = useState(false)
+  const [loadErr, setLoadErr] = useState<ApiFail>()
+  const cross = !!current && siteId !== current.id
+  const target = sites.find(s => s.id === siteId)
+
+  async function chooseSite(id: string) {
+    setSiteId(id); setDest(''); setLoadErr(undefined); setLoaded(undefined)
+    if (!current || id === current.id) return
+    setLoading(true)
+    const r = await api<DestinationOptions>('GET', `/api/v1/stays/${stay.id}/transfer-options?siteId=${encodeURIComponent(id)}`)
+    setLoading(false)
+    if (r.ok) setLoaded(r.data); else setLoadErr(r)
+  }
+
+  const beds: { bedId: string; code: string; roomName: string; eligible: boolean; hint: string | null }[] = cross
+    ? loaded?.beds ?? []
+    : options.map(b => ({ ...b, eligible: true, hint: null }))
+  const blocked = beds.filter(b => !b.eligible)
+
   return (
-    <GlassCard title="Ask to move to another bed" subtitle="An Accommodation Admin decides, then Reception moves you. If the new bed is no longer free you stay where you are.">
-      <form className="form" noValidate onSubmit={e => { e.preventDefault(); void run(`/api/v1/stays/${stay.id}/transfer`, { destinationBedId: dest || null, reason }, () => { setReason(''); setDest('') }) }}>
+    <GlassCard title="Ask to move to another bed" subtitle={sites.length > 1
+      ? 'In this site or in another one. An Accommodation Admin decides, then Reception moves you. If the new bed is no longer free you stay where you are.'
+      : 'An Accommodation Admin decides, then Reception moves you. If the new bed is no longer free you stay where you are.'}>
+      <form className="form" noValidate onSubmit={e => { e.preventDefault(); void run(`/api/v1/stays/${stay.id}/transfer`, { destinationSiteId: cross ? siteId : null, destinationBedId: dest || null, reason }, () => { setReason(''); setDest('') }) }}>
         {err && <Problem f={err} />}
-        <Field label="Preferred bed" hint="Only beds that are ready now are listed. Leave on 'Any suitable bed' to let the Accommodation Admin choose." optional error={err?.fields?.destinationBedId}>
-          <Select value={dest} onChange={e => setDest(e.target.value)}>
-            <option value="">Any suitable bed</option>
-            {options.map(b => <option key={b.bedId} value={b.bedId}>{b.roomName} · {b.code}</option>)}
+        {sites.length > 1 && (
+          <Field label="Move to" hint="Any site is possible. A move to another site needs the approval of the Accommodation Admin of each site." error={err?.fields?.destinationSiteId}>
+            <Select value={siteId} onChange={e => void chooseSite(e.target.value)}>
+              {sites.map(s => <option key={s.id} value={s.id}>{s.name}{s.current ? ' (where you are now)' : ''}</option>)}
+            </Select>
+          </Field>
+        )}
+        {cross && (
+          <Alert tone="info" title={`A move into ${target?.name ?? 'another site'} needs two approvals`}
+            detail={`The Accommodation Admin of ${current?.name ?? currentSiteName} agrees to let you go and the Accommodation Admin of ${target?.name ?? 'the other site'} agrees to take you and chooses your bed if you do not. You stay where you are until both have approved and Reception moves you.`} />
+        )}
+        {loadErr && <Problem f={loadErr} />}
+        <Field label="Preferred bed" hint={cross
+          ? 'Beds of that site that are ready now and free for the rest of your stay. Leave on "Any suitable bed" to let the Accommodation Admin there choose.'
+          : "Only beds that are ready now are listed. Leave on 'Any suitable bed' to let the Accommodation Admin choose."} optional error={err?.fields?.destinationBedId}>
+          <Select value={dest} onChange={e => setDest(e.target.value)} disabled={loading}>
+            <option value="">{loading ? 'Loading beds…' : 'Any suitable bed'}</option>
+            {beds.filter(b => b.eligible).map(b => <option key={b.bedId} value={b.bedId}>{b.roomName} · {b.code}</option>)}
           </Select>
         </Field>
+        {cross && loaded?.note && <p className="muted body-sm">{loaded.note}</p>}
+        {blocked.length > 0 && (
+          <div className="stack" style={{ gap: 6 }}>
+            <p className="body-sm" style={{ margin: 0 }}><b>Beds you cannot have there</b></p>
+            <ul className="list-plain" aria-label="Beds that are not available to you">
+              {blocked.map(b => <li key={b.bedId} style={{ flexWrap: 'wrap' }}><span style={{ flex: 1, minWidth: 160 }}>{b.roomName} · {b.code}<span className="muted body-sm" style={{ display: 'block' }}>{b.hint}</span></span><Badge tone="warning">Not available</Badge></li>)}
+            </ul>
+          </div>
+        )}
         <Field label="Reason" error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>
-        <div><Button variant="primary" type="submit" disabled={busy || reason.trim().length < 3}>Request move</Button></div>
+        <div><Button variant="primary" type="submit" disabled={busy || loading || reason.trim().length < 3}>Request move</Button></div>
       </form>
     </GlassCard>
   )

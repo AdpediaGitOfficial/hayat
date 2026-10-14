@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { bed, bedClaim, reservation, stay } from '@/server/db/schema'
+import { bed, bedClaim, reservation, room, site, stay } from '@/server/db/schema'
 import { checkoutRequest, extensionRequest, transferRequest } from '@/server/db/schema.stays'
 import { getDb } from '@/server/db/client'
 import { getConfig } from '@/server/config/registry'
@@ -9,6 +9,7 @@ import { isUuid } from '@/server/commands/property/shared'
 import { stayFlag, type StayFlag } from '@/server/commands/stays/rules'
 import { scopeSql } from '@/server/queries/scope'
 import { suggestBeds, type BedSuggestion } from '@/server/allocation'
+import { checkEligibility } from '@/server/eligibility'
 import { bedInfoMap, localDate, personMap, personOf } from './common'
 
 export interface StayRow {
@@ -85,6 +86,13 @@ export interface CheckoutView { id: string; status: string; departureDate: strin
 export interface TransferView {
   id: string; kind: 'transfer' | 'swap'; status: string; reason: string; fromBedLabel: string; toBedLabel: string | null; createdAt: string; executedAt: string | null
   failureReason: string | null; failedAt: string | null
+  /** D-104: a move into another site needs the Accommodation Admin of each site (the two keys). */
+  crossSite: boolean
+  fromSiteName: string
+  toSiteName: string
+  keys: { source: { siteName: string; approved: boolean }; destination: { siteName: string; approved: boolean } }
+  /** While open and cross-site: who still has to approve, in words ("the Accommodation Admin of Palm Villas"). */
+  waitingFor: string | null
 }
 export interface StayDetail extends StayRow {
   reservationId: string | null
@@ -119,10 +127,21 @@ export async function getStayDetail(actor: Actor, id: string, now: Date = getClo
     clash: e.clash ?? null, requestedByStaffId: e.requestedByStaffId,
   }))
   const checkouts: CheckoutView[] = outs.map(o => ({ id: o.id, status: o.status, departureDate: o.departureDate, note: o.note, createdAt: o.createdAt.toISOString(), acknowledgedAt: o.acknowledgedAt?.toISOString() ?? null, completedAt: o.completedAt?.toISOString() ?? null }))
-  const transfers: TransferView[] = trs.map(t => ({
-    id: t.id, kind: t.kind, status: t.status, reason: t.reason, fromBedLabel: beds.get(t.fromBedId)?.label ?? '', toBedLabel: t.toBedId ? beds.get(t.toBedId)?.label ?? null : null,
-    createdAt: t.createdAt.toISOString(), executedAt: t.executedAt?.toISOString() ?? null, failureReason: t.failureReason, failedAt: t.failedAt?.toISOString() ?? null,
-  }))
+  const siteIds = [...new Set(trs.flatMap(t => [t.siteId, t.destinationSiteId]))]
+  const siteNames = new Map((siteIds.length ? await db.select({ id: site.id, name: site.name }).from(site).where(inArray(site.id, siteIds)) : []).map(s => [s.id, s.name]))
+  const transfers: TransferView[] = trs.map(t => {
+    const crossSite = t.destinationSiteId !== t.siteId
+    const [fromSiteName, toSiteName] = [siteNames.get(t.siteId) ?? '', siteNames.get(t.destinationSiteId) ?? '']
+    const missing = t.status === 'requested' || t.status === 'failed'
+      ? [t.sourceApprovedAt ? null : fromSiteName, t.destinationApprovedAt ? null : toSiteName].filter((x): x is string => x !== null) : []
+    return {
+      id: t.id, kind: t.kind, status: t.status, reason: t.reason, fromBedLabel: beds.get(t.fromBedId)?.label ?? '', toBedLabel: t.toBedId ? beds.get(t.toBedId)?.label ?? null : null,
+      createdAt: t.createdAt.toISOString(), executedAt: t.executedAt?.toISOString() ?? null, failureReason: t.failureReason, failedAt: t.failedAt?.toISOString() ?? null,
+      crossSite, fromSiteName, toSiteName,
+      keys: { source: { siteName: fromSiteName, approved: !!t.sourceApprovedAt }, destination: { siteName: toSiteName, approved: !!t.destinationApprovedAt } },
+      waitingFor: crossSite && missing.length ? missing.map(n => `the Accommodation Admin of ${n}`).join(' and ') : null,
+    }
+  })
   return {
     ...base, reservationId: res?.id ?? null, siteTimeZone: info.siteTimeZone, extensions, checkouts, transfers,
     openExtension: extensions.find(e => e.status === 'requested'),
@@ -171,7 +190,54 @@ export function stayAbilities(actor: Actor, s: { siteId: string; staffId: string
   }
 }
 
-/** Beds that are ready right now and free for the rest of this stay: what a transfer request can offer. Same site only. */
+/* ---------------- where a move can go (D-104) ---------------- */
+
+export interface DestinationSite { id: string; name: string; current: boolean }
+export interface DestinationBed { bedId: string; code: string; roomName: string; eligible: boolean; /** Plain words, about the person being moved only. */ hint: string | null }
+export interface DestinationOptions { siteId: string; siteName: string; current: boolean; beds: DestinationBed[]; note: string | null }
+
+/** Every live site a move can go to: the requester needs no scope there, because the Accommodation Admin of that site decides. */
+export async function transferSites(currentSiteId: string): Promise<DestinationSite[]> {
+  const rows = await getDb().select({ id: site.id, name: site.name }).from(site).where(sql`${site.archivedAt} is null`).orderBy(site.name)
+  return rows.map(r => ({ ...r, current: r.id === currentSiteId }))
+}
+
+/**
+ * The beds of a destination site that are ready now and free for the rest of this stay, each with whether this person may have it
+ * under THAT site's rules and, if not, why in plain words. Only for someone who may ask for the move; no other person's data.
+ */
+export async function destinationOptions(actor: Actor, stayId: string, siteId: string, now: Date = getClock().now()): Promise<DestinationOptions | undefined> {
+  if (!isUuid(stayId) || !isUuid(siteId)) return undefined
+  const { rows } = await listStaysByIds(actor, [stayId], now)
+  const s = rows[0]
+  if (!s || s.status !== 'active') return undefined
+  const ab = stayAbilities(actor, { siteId: s.siteId, staffId: s.staffId })
+  if (!ab.requestTransfer) return undefined
+  const db = getDb()
+  const [dest] = await db.select({ id: site.id, name: site.name, tz: site.timeZone, archivedAt: site.archivedAt }).from(site).where(eq(site.id, siteId)).limit(1)
+  if (!dest || dest.archivedAt) return undefined
+  const today = localDate(now, dest.tz)
+  const from = today > s.from ? today : s.from
+  if (s.to && s.to <= from) return { siteId, siteName: dest.name, current: siteId === s.siteId, beds: [], note: 'This stay ends before a move could happen.' }
+  const period = `[${from},${s.to ?? ''})`
+  const candidates = await db.select({ bedId: bed.id, code: bed.code, roomName: room.name }).from(bed).innerJoin(room, eq(room.id, bed.roomId))
+    .where(and(
+      eq(bed.siteId, siteId), eq(bed.state, 'available'), sql`${bed.archivedAt} is null`, sql`${room.archivedAt} is null`, sql`${bed.id} <> ${s.bedId}`,
+      sql`NOT EXISTS (SELECT 1 FROM ${bedClaim} WHERE ${bedClaim.bedId} = ${bed.id} AND ${bedClaim.releasedAt} IS NULL AND ${bedClaim.period} && ${period}::daterange)`,
+    )).orderBy(room.name, bed.code).limit(40)
+  const beds: DestinationBed[] = []
+  for (const cand of candidates) {
+    const e = await checkEligibility(db, s.staffId, cand.bedId, now)
+    beds.push({ ...cand, eligible: !!e?.ok, hint: !e || e.ok ? null : `${e.reasons.join('; ')}${e.exceptionable ? '. A Policy Approver can grant an exception.' : ''}` })
+  }
+  beds.sort((a, b) => Number(b.eligible) - Number(a.eligible))
+  return {
+    siteId, siteName: dest.name, current: siteId === s.siteId, beds,
+    note: beds.length === 0 ? `No ready bed in ${dest.name} is free for the rest of this stay. You can still ask for "any suitable bed": the Accommodation Admin there will look.` : null,
+  }
+}
+
+/** Beds that are ready right now and free for the rest of this stay in the SAME site: what a transfer request can offer first. */
 export async function transferOptions(actor: Actor, stayId: string, now: Date = getClock().now()): Promise<BedSuggestion[]> {
   if (!isUuid(stayId)) return []
   const { rows } = await listStaysByIds(actor, [stayId], now)

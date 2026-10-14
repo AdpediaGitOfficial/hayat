@@ -68,11 +68,13 @@ describe('transfer: request, approve, execute (D-61)', () => {
     expect((await transferRow(r.data.id)).to_bed_id).toBe(sc.bedIds[2])
   })
 
-  it('a cross-site destination is refused at request time (a move to another site is a new request)', async () => {
+  // D-104 (14 Oct 2026) replaced the Stage 2 rule "a move to another site is a new request": a cross-site destination is now accepted at
+  // request time and needs both sites' approvals. The proofs are in tests/api/stays/crosssite*.test.ts.
+  it('a cross-site destination is accepted at request time (D-104) and waits for the Accommodation Admins of both sites', async () => {
     const sc = await scene()
     const other = await world({ beds: 1 })
     const r = await requestTransfer(sc.res.rc, req(sc.stayId, other.bedIds[0]))
-    expect(!r.ok && r.detail).toMatchObject({ reason: 'cross_site' })
+    expect(r.ok && r.data).toMatchObject({ status: 'requested', crossSite: true })
   })
 
   it('Reception executes approved ones only', async () => {
