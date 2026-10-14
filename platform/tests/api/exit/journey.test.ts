@@ -2,9 +2,8 @@
  * Proof 6 of docs/STAGE-3.md section 7, the exit journey end to end: check-in, keys issued, Mark as Left, checkout, keys returned,
  * clearance closed, stay closed, cleaning, inspection, bed Available, next waiting resident told.
  *
- * Steps that belong to other work packages are written as the FACTS those packages record (marked "stand-in"): the return of a key
- * (WP-I: a handover_event 'returned' and the item back in the cabinet) and the cleaning and final inspection (WP-J: cleaning_task
- * passed, bed inspection_required then available). At the merge, replace each stand-in with the real command; the assertions stay.
+ * Every step uses the real command of its package: check-in and checkout (WP-F), issuing and returning the key (WP-I), Mark as Left and
+ * clearance (WP-H), cleaning and final inspection (WP-J), the freed-bed notice (WP-E).
  */
 import { afterAll, describe, expect, it } from 'vitest'
 import { admin, call, closeAll, PASSWORD } from '../harness'
@@ -14,9 +13,11 @@ import { processCheckout } from '@/server/commands/stays/checkout'
 import { markLeft } from '@/server/commands/exit/markLeft'
 import { completeItem } from '@/server/commands/exit/items'
 import { closeCase } from '@/server/commands/exit/close'
-import { notifyFreedBed } from '@/server/commands/waitlist'
-import { getDb } from '@/server/db/client'
-import { bedState, itemsOf, mkItem, mkReservation, notifs, resident, stayRow, world } from './helpers'
+import { issueItem, returnItem } from '@/server/commands/keys/movements'
+import { assignCleaning } from '@/server/commands/readiness/assign'
+import { completeCleaning } from '@/server/commands/readiness/clean'
+import { passInspection } from '@/server/commands/readiness/inspect'
+import { bedState, itemsOf, mkItem, mkReservation, notifs, resident, stayRow, who, world } from './helpers'
 import { cleaningTasks } from '../fixtures3'
 
 afterAll(closeAll)
@@ -35,8 +36,10 @@ describe('the exit journey', () => {
     const stayId = inn.data.stayId
     expect(await bedState(bedId)).toBe('occupied')
 
-    // 2. keys issued (stand-in for WP-I's issue command: the item is held by the resident)
-    const key = await mkItem({ siteId: w.siteId, bedId, holderStaffId: r.staffId, code: 'K-JOURNEY' })
+    // 2. Reception issues the bed's key (WP-I)
+    const key = await mkItem({ siteId: w.siteId, bedId, code: 'K-JOURNEY' })
+    const issued = await issueItem(w.rec.rc(), { itemId: key, staffId: r.staffId, dueBack: null, note: null })
+    expect(issued.ok, JSON.stringify(issued)).toBe(true)
 
     // 3. someone else is waiting for a bed at the site
     const waiting = await resident()
@@ -63,9 +66,10 @@ describe('the exit journey', () => {
     // 6. the case cannot close yet: the key is still held
     expect(await closeCase(w.aa.rc(), { caseId })).toMatchObject({ ok: false, code: 'conflict' })
 
-    // 7. the key comes back (stand-in for WP-I's return command, recorded on the former employee's behalf)
-    await admin().query(`UPDATE handover_item SET status = 'in_cabinet', holder_staff_id = NULL WHERE id = $1`, [key])
-    await admin().query(`INSERT INTO handover_event (item_id, kind, staff_id, actor_user_id, on_behalf, note) VALUES ($1, 'returned', $2, $3, true, 'Handed in at the desk')`, [key, r.staffId, w.rec.user.id])
+    // 7. the key comes back, recorded by Reception on the former employee's behalf (WP-I)
+    const back = await returnItem(w.rec.rc(), { itemId: key, note: 'Handed in at the desk', onBehalf: true })
+    expect(back.ok, JSON.stringify(back)).toBe(true)
+    expect(await stayRow(stayId)).toMatchObject({ status: 'checked_out' }) // the case is still open
 
     // 8. the rest of the checklist, then the case closes, and with it the stay (checked out AND cleared AND nothing held)
     const by = (k: string) => items.find(i => i.checklist_key === k)!.id
@@ -77,20 +81,23 @@ describe('the exit journey', () => {
     // clearance complete is NOT bed ready (D-64): the bed is still waiting for cleaning, and nobody can be placed in it
     expect(await bedState(bedId)).toBe('needs_cleaning')
 
-    // 9. cleaning and final inspection (stand-in for WP-J): only then is the bed Available
-    await admin().query(`UPDATE cleaning_task SET status = 'cleaned', cleaned_at = now() WHERE bed_id = $1 AND status = 'open'`, [bedId])
-    await admin().query(`UPDATE bed SET state = 'inspection_required' WHERE id = $1`, [bedId])
-    expect(await bedState(bedId)).toBe('inspection_required')
-    await admin().query(`UPDATE cleaning_task SET status = 'passed', inspected_at = now() WHERE bed_id = $1 AND status = 'cleaned'`, [bedId])
-    await admin().query(`UPDATE bed SET state = 'available' WHERE id = $1`, [bedId])
+    // 9. cleaning by an assigned housekeeper, then the final inspection by a different person (WP-J): only then is the bed Available
+    const hk = await who('Res', { caps: ['Housekeeping'] })
+    const insp = await who('Rec', { siteIds: [w.siteId], caps: ['FinalInspection'] })
+    const task = (await cleaningTasks(bedId))[0]
+    expect((await assignCleaning(w.rec.rc(), { taskId: task.id, housekeeperStaffId: hk.user.staffId, note: null })).ok).toBe(true)
+    const cleaned = await completeCleaning(hk.rc(), { taskId: task.id, checklist: { linen: true, surfaces: true, bathroom: true, bins: true }, notes: null } as never)
+    expect(cleaned.ok, JSON.stringify(cleaned)).toBe(true)
+    expect(await bedState(bedId)).toBe('inspection_required')           // cleaning alone does not make it Available
+    const passed = await passInspection(insp.rc(), { taskId: task.id, note: null })
+    expect(passed.ok, JSON.stringify(passed)).toBe(true)
     expect(await bedState(bedId)).toBe('available')
 
-    // 10. the next waiting resident is the one the Accommodation Admin is told about
-    const told = await getDb().transaction(tx => notifyFreedBed(tx, bedId, new Date('2026-10-14T12:00:00Z'), `journey:${caseId}`))
-    expect(told).toBe(true)
-    const n = await notifs(`waitlist:bed:${bedId}:journey:${caseId}`)
+    // 10. the next waiting resident is the one the Accommodation Admin is told about; no offer was created by itself
+    const n = await notifs(`waitlist:bed:${bedId}`)
     expect(n).toHaveLength(1)
     expect(n[0]).toMatchObject({ kind: 'waitlist.bed_free', to_role: 'AA' })
+    expect((await admin().query(`SELECT count(*)::int AS n FROM bed_offer WHERE staff_id = $1`, [waiting.staffId])).rows[0].n).toBe(0)
 
     // history: one case, one audit trail, nothing deleted
     const events = (await admin().query(`SELECT kind FROM clearance_event WHERE case_id = $1 ORDER BY seq`, [caseId])).rows.map(e => e.kind)

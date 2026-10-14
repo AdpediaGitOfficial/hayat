@@ -89,11 +89,13 @@ As before: gate tests green in CI; contract test green; typecheck and lint clean
 
 | Package | Status |
 |---|---|
-| WP-0 Stage 3 core | Done (migration 0090, reauth, attachments, cleaning hook, stay closing, handover query, archive checkers, tests) |
-| WP-H Exit, clearance, rehire | Not started |
-| WP-I Keys and assets | Not started |
-| WP-J Cleaning, inspection, readiness | Not started |
-| WP-K Cross-site transfers (D-104) | Not started |
+| WP-0 Stage 3 core | Done (migration 0090, re-confirmation, attachments, cleaning hook, stay closing, handover query, archive checkers) |
+| WP-H Exit, clearance, rehire | Done: migration 0100, Mark as Left (single and bulk), cascade, clearance cases and items, completion on behalf, waiver (writes the key off), close, rehire, overdue sweep, screens |
+| WP-I Keys and assets | Done: registry, issue, return, lost, damaged, found, retire, replace, overdue (computed), sweep, screens, keys panel on the stay page |
+| WP-J Cleaning, inspection, readiness | Done: assignment, checklist, final inspection (the only writer of Available), board, housekeeper phone screens, reminder sweep |
+| WP-K Cross-site transfers (D-104) | Done: migration 0130, two-key approval, destination revalidation, atomic execution, follow-up hooks, screens |
+| Integration | Real-command exit journey (`tests/api/exit/journey.test.ts`); keys panel mounted on `/stays/[id]`; Mark as Left and Rehire buttons on the staff profile |
+| Exit gate | See section 12 |
 
 ## 10. Recipe for work packages H to K (WP-0 as built)
 
@@ -112,3 +114,21 @@ Read `docs/STAGE-1.md` section 9 and `docs/STAGE-2.md` sections 10 and 11 first;
 ## 11. Common brief for work packages H to K
 
 Same as `docs/STAGE-2.md` section 11 (read-first list, environment, rules, report format) with these changes: the Stage 3 plan and recipe are sections 1 to 10 of this document; seeded e2e people are the same plus residents E1301 and E1302 (already used by Stage 2 specs: **create your own people in your e2e spec** with the pattern in `tests/e2e/requests.spec.ts`, never reuse a seeded resident); give your Playwright smoke the unique port named in your brief; `tests/api/fixtures3.ts` is the fixture base; shared e2e data lives in one database so your spec must not depend on being alone (pick your own bed from your own room, filter by names you created). Your final run must include the complete `npx playwright test` (all specs), not only yours.
+
+## 12. Exit gate result (14 Oct 2026)
+
+Merged branch, real PostgreSQL 16, application connected as `app_role`:
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `next lint`, `next build` | clean |
+| Vitest (81 files) | 1331 passed, 0 failed, no unhandled errors |
+| Acceptance tests by name | AT-019, 020, 032 (WP-H); AT-021 (WP-J); AT-029 extended (keys held, open cleaning); AT-022 still green with cross-site transfers (WP-K) |
+| Section 7 proofs | 1 to 7 covered; proof 6 runs the real command of every package in one journey |
+| Permission contract test | green with every Stage 3 route |
+| Playwright smoke | 29 passed in one run on one database (auth, property, staff, access, requests, waitlist, stays, cross-site, emergency, exit, keys, readiness) |
+| Severity-1 defects | none known |
+
+**Seams fixed at merge:** a waived lost key is written off so the stay can close; keys panel, Mark as Left and Rehire buttons wired in; approval kind labels; every e2e spec uses the run's own database and its own people; fixtures follow the new `destination_site_id` column; `data/` ignored.
+
+**Carried forward:** Stage 4 must call `openCleaningTask` when work finishes; visitor and contractor pass hooks for Mark as Left and cross-site moves; archive of a staff profile does not yet check for an open clearance case; D-75 periodic inspections; retention policy (GH-11). Open questions S-14 and S-18 to S-22 in `docs/PLAN.md`.

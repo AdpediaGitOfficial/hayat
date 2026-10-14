@@ -21,6 +21,7 @@ import { fail, failure, ok, type Failure, type Result } from '@/server/command/r
 import { confirmPassword } from '@/server/auth/reauth'
 import { notify } from '@/server/notify'
 import { OWNER_LABEL, nextActionFor } from './rules'
+import { loadItemLocked, logEvent as logEvent2, setState } from '@/server/commands/keys/shared'
 import {
   attachmentsOnItem, authorizeAtSite, caseItems, idSchema, logEvent, loadCaseLocked, reasonSchema, refreshCaseStatus, resolveItems, syncHandoverItems,
   type CaseRow, type ResolvedItem,
@@ -215,6 +216,17 @@ export function waiveItem(rc: RequestContext, i: WaiveItemInput): Promise<Result
     await c.tx.update(clearanceItem).set({
       status: 'waived', waivedBy: c.user.id, waivedAt: c.now, waiverReason: i.reason, waiverEvidence: i.evidence, onBehalfOfStaffId: kase.staffId,
     }).where(eq(clearanceItem.id, item.id))
+    // A waived key or asset is written off: the Policy Approver accepted that it will not come back, so the register retires it
+    // (never "returned", D-73) and it stops holding the stay open. The history keeps who held it and why it was retired.
+    const [link] = await c.tx.select({ handoverId: clearanceItem.handoverItemId }).from(clearanceItem).where(eq(clearanceItem.id, item.id)).limit(1)
+    if (item.kind === 'handover' && link?.handoverId) {
+      const hi = await loadItemLocked(c.tx, link.handoverId)
+      if (hi && ['issued', 'lost', 'damaged'].includes(hi.status)) {
+        await setState(c, hi.id, { status: 'retired', holderStaffId: null, issuedAt: null, dueBack: null })
+        await logEvent2(c, { itemId: hi.id, kind: 'retired', staffId: hi.holderStaffId, onBehalf: true, note: `Written off by a Policy Approver waiver: ${i.reason}` })
+        await audit(c, { action: 'keys.item.written_off', entityType: 'handover_item', entityId: hi.id, siteId: hi.siteId, reason: i.reason, before: { status: hi.status, holder: hi.holderStaffId }, after: { status: 'retired', via: 'clearance waiver', clearanceItemId: item.id } })
+      }
+    }
     await logEvent(c.tx, { caseId: kase.id, itemId: item.id, kind: 'item_waived', actorUserId: c.user.id, onBehalfOfStaffId: kase.staffId, note: `${i.reason}. Evidence: ${i.evidence}`, at: c.now })
     await audit(c, {
       action: 'exit.clearance.item_waived', entityType: 'clearance_item', entityId: item.id, siteId: kase.siteId ?? undefined, reason: i.reason,

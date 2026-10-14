@@ -5,6 +5,7 @@ import { can } from '@/server/policy'
 import { viewStaff } from '@/server/commands/staff/read'
 import { PageHeader } from '@/ui'
 import { Profile } from '../_components/Profile'
+import { MarkLeftButton, RehireButton } from '../../exits/_components/MarkLeftButton'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Staff profile · Grand Hyatt Staff Accommodation' }
@@ -17,7 +18,11 @@ export default async function StaffDetail({ params }: { params: { id: string } }
   return (
     <>
       <PageHeader crumbs={['People', 'Staff directory']} title="Staff profile"
-        actions={<Link href="/staff" className="btn secondary" style={{ textDecoration: 'none' }}>Back to directory</Link>} />
+        actions={<>
+          {r.data.staff.employmentStatus === 'active' && can(cur.rc.actor, 'exit_clearance.mark_left') && <MarkLeftButton employeeId={r.data.staff.employeeId} />}
+          {r.data.staff.employmentStatus === 'left' && can(cur.rc.actor, 'staff_directory.manage') && <RehireButton employeeId={r.data.staff.employeeId} />}
+          <Link href="/staff" className="btn secondary" style={{ textDecoration: 'none' }}>Back to directory</Link>
+        </>} />
       <Profile shape={r.data.shape} staff={r.data.staff} canManage={can(cur.rc.actor, 'staff_directory.manage')} />
     </>
   )

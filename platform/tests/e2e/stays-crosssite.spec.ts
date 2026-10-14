@@ -59,7 +59,7 @@ test('a resident asks to move to another site; both sites\' admins approve; Rece
   /* ---------------- arrange: two sites, rooms and beds, four people, one active stay ---------------- */
   // The first site is created through the API as a Super Admin (so the e2e database exists and is seeded); the rest is arranged directly.
   await signIn(page, 'E9005')
-  const created = await page.request.post('/api/v1/property/sites', { data: { code: srcCode, name: srcName, kind: 'apartment' }, headers: { origin: 'http://localhost:' + (process.env.E2E_PORT ?? '3131') } })
+  const created = await page.request.post('/api/v1/property/sites', { data: { code: srcCode, name: srcName, kind: 'apartment' } })
   expect(created.ok()).toBeTruthy()
   await withE2eDb(srcCode, async db => {
     const src = (await db.query<{ id: string }>(`SELECT id FROM site WHERE code = $1`, [srcCode])).rows[0].id

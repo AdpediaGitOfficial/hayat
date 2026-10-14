@@ -126,8 +126,8 @@ describe('when does a stay close?', () => {
   })
 })
 
-describe('a waived lost key (seam documented for the merge)', () => {
-  it('closes the case, but the register still shows the key held by the person, so the stay stays checked_out until the item is resolved in Keys & assets', async () => {
+describe('a waived lost key is written off', () => {
+  it('the waiver retires the key record (never "returned"), keeps who held it, and the stay then closes with the case', async () => {
     const w = await world()
     const r = await resident({ bedId: w.bedIds[0] })
     const card = await mkItem({ siteId: w.siteId, roomId: w.roomId, holderStaffId: r.staffId, status: 'lost', category: 'asset', itemType: 'access_card', code: 'C-WAIVED' })
@@ -136,11 +136,14 @@ describe('a waived lost key (seam documented for the merge)', () => {
     const items = await itemsOf(caseId)
     await completeItem(w.rec.rc(), { itemId: idOf(items, 'belongings') })
     await completeItem(w.mc.rc(), { itemId: idOf(items, 'inspection') })
-    await waiveItem(w.pa.rc(), { itemId: items.find(i => i.handover_item_id === card)!.id, reason: 'Lost on site', evidence: 'Incident SIR-1', confirmPassword: PASSWORD })
+    expect((await waiveItem(w.pa.rc(), { itemId: items.find(i => i.handover_item_id === card)!.id, reason: 'Lost on site', evidence: 'Incident SIR-1', confirmPassword: PASSWORD })).ok).toBe(true)
+    expect((await admin().query(`SELECT status, holder_staff_id FROM handover_item WHERE id = $1`, [card])).rows[0]).toEqual({ status: 'retired', holder_staff_id: null })
+    const ev = (await admin().query(`SELECT kind, staff_id, on_behalf, note FROM handover_event WHERE item_id = $1 ORDER BY created_at`, [card])).rows
+    expect(ev.at(-1)).toMatchObject({ kind: 'retired', staff_id: r.staffId, on_behalf: true })
+    expect(ev.at(-1).note).toMatch(/Written off by a Policy Approver waiver/)
+    expect(ev.map(e => e.kind)).not.toContain('returned')
     expect((await closeCase(w.aa.rc(), { caseId })).ok).toBe(true)
-    expect(await stayRow(r.stayId!)).toMatchObject({ status: 'checked_out' }) // the WP-0 handover blocker still sees the lost card
-    // once WP-I retires or resolves the card, the next closeStayIfDone call (a return, a recheck) closes it
-    await admin().query(`UPDATE handover_item SET status = 'retired', holder_staff_id = NULL WHERE id = $1`, [card])
-    expect(await getDb().transaction(tx => closeStayIfDone(tx, r.stayId!, new Date()))).toBe(true)
+    expect(await stayRow(r.stayId!)).toMatchObject({ status: 'closed' })
+    void closeStayIfDone; void getDb
   })
 })

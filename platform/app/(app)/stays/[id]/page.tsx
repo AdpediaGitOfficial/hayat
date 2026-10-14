@@ -5,6 +5,7 @@ import { getStayDetail, stayAbilities, transferOptions, transferSites } from '@/
 import { Alert, Badge, Blocked, GlassCard, PageHeader, Status } from '@/ui'
 import { fmtDate, fmtDateLong } from '@/domain/time'
 import { FlagBadge } from '../_components/FlagBadge'
+import { KeysPanel } from '../../keys/_components/KeysPanel'
 import { CancelRequest, CheckoutRequestForm, Clash, ExtensionDecision, ExtensionForm, ProcessCheckout, TransferForm } from '../_components/StayActions'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +41,7 @@ export default async function StayPage({ params }: { params: { id: string } }) {
 
       <div className="grid two">
         <div className="stack">
+          <KeysPanel stayId={d.id} />
           <GlassCard title="Stay">
             <dl className="kv">
               <dt>Resident</dt><dd>{d.name}{d.employeeId && <span className="mono muted"> {d.employeeId}</span>}</dd>
