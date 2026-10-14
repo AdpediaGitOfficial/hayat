@@ -27,6 +27,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-D nav
 
   // >>> WP-E nav (waitlist, offers)
+  // Staff who act on the waitlist: the queue, offers in flight and priority decisions. Residents see their own entry and offers under "My accommodation".
+  { id: 'waitlist', label: 'Waitlist', href: '/waitlist', icon: 'hourglass', group: 'Accommodation', actions: ['requests_waitlist.manage_waitlist', 'requests_waitlist.manage_offers', 'requests_waitlist.record_offline_offer', 'requests_waitlist.approve_exception'] },
   // <<< WP-E nav
 
   // >>> WP-F nav (stays, check-in, transfers)

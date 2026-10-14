@@ -7,6 +7,7 @@ import '../../approvals/sweep'
 // <<< WP-D sweeps
 
 // >>> WP-E sweeps (waitlist, offers)
+import './waitlist'
 // <<< WP-E sweeps
 
 // >>> WP-F sweeps (no-show, end-date, overdue)
