@@ -27,5 +27,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-B nav
 
   // >>> WP-C nav (users, configuration, audit)
+  { id: 'users', label: 'Users & access', href: '/users', icon: 'userCog', group: 'Administration', actions: ['users_roles.view'] },
+  { id: 'config', label: 'Configuration', href: '/config', icon: 'settings', group: 'Administration', actions: ['system_config.view'] },
+  { id: 'audit', label: 'Audit log', href: '/audit', icon: 'scroll', group: 'Administration', actions: ['audit_log.view'] },
   // <<< WP-C nav
 ]
