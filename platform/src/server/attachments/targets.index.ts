@@ -7,6 +7,7 @@
 // <<< WP-I attachment targets
 
 // >>> WP-J attachment targets (cleaning and inspection)
+import '@/server/commands/readiness/attachments'
 // <<< WP-J attachment targets
 
 export {}
