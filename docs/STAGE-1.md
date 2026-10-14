@@ -99,3 +99,17 @@ All in numbered migrations, each granting `app_role` only what it needs and neve
 | WP-A Property | Not started |
 | WP-B Staff and CSV | Not started |
 | WP-C Access, configuration, audit | Not started |
+
+## 9. Recipe for work packages (WP-0 as built)
+
+Read `platform/README.md` "Stage 1 core" first. A feature is these pieces, in this order:
+
+1. **Migration** `db/migrations/00NN_*.sql` inside your range. `GRANT SELECT, INSERT, UPDATE` to `app_role` (never DELETE; `tests/db/app-role.test.ts` fails the build otherwise). Every table: uuid primary key, `created_at`, `archived_at` instead of delete.
+2. **Drizzle table** in your own `src/server/db/schema.<pkg>.ts`, registered in its `TABLES_<PKG>` object (the schema-sync test compares every table and column with the migrated database).
+3. **Command** in `src/server/commands/<pkg>/<verb>.ts`: export a Zod `input` schema and `async function verb(rc: RequestContext, input): Promise<Result<Out>>`. Body: `runCommand(rc, async c => { ... })`; inside, `const denied = authorize(c, 'module.action', { siteId }); if (denied) return denied` (src/server/command/authorize.ts: out of scope is 404, no grant is 403), `notSelf(...)` for D-26, do the writes through `c.tx`, then `await audit(c, { action: 'pkg.thing.verb', entityType, entityId, siteId, reason, before, after })`. Return `ok(data)` or a `fail.*`. Never throw for a business refusal; a failure result rolls the whole transaction back, audit row included. Lock the row you are about to change (`.for('update')`) when two admins could race.
+4. **Query** in `src/server/queries/<pkg>/*.ts`: takes the `Actor`, builds the WHERE with `scopeSql(scopeFilter(actor, 'module.action'), { site: table.siteId })` from `src/server/queries/scope.ts`. Never return rows the actor may not see, and never fetch then filter.
+5. **Route** `app/api/v1/<pkg>/.../route.ts`: `export const POST = route({ name: 'pkg.verb', access: { kind: 'action', action: 'module.action' }, body: inputSchema, handler: (rc, body, req, reply, { params }) => verb(rc, { ...body, id: params.id }) })`. Names are unique and dotted. Every action-guarded route is covered automatically by `tests/api/contract.test.ts`.
+6. **Page** `app/(app)/<area>/page.tsx` (server component): `const cur = await requirePage('module.view')`, call the query with `cur.rc.actor`, render with `src/ui`. Forms and buttons are small `'use client'` components that call `post()` from `src/ui/api.ts` and show a failure with reason, owner and next action (the `Blocked`/`Alert` components), then `router.refresh()`. Add the nav entry inside your marked block of `src/app-nav.ts`.
+7. **Tests**: API-level tests with `tests/api/harness.ts` (import it first). Name acceptance tests after the SRS ids, e.g. `it('AT-029 archive is blocked with the dependencies listed', ...)`. Cover: the happy path, every refusal path, the audit row, 404 for out-of-scope, 403 for no grant, and one concurrency case where relevant.
+
+Rules that are not negotiable: no deletes; timeouts never decide for a person; nothing OPEN hard-coded (use `getConfig` / the registry, add keys to the registry only if WP-0 owns them: report instead); notification failure never changes business state; end dates are departure days (D-103).
