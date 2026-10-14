@@ -4,6 +4,9 @@
  * compares it with the migrated database, so a column added to one and not the other fails CI.
  */
 import { bigint, boolean, customType, date, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { TABLES_PROPERTY } from './schema.property'
+import { TABLES_STAFF } from './schema.staff'
+import { TABLES_ACCESS } from './schema.access'
 import type {
   BedStateDb, Capability, ClaimKind, GrantStatus, OfferStatus, RequestStatus, ReservationStatus, Role, ScopeKind,
   StayStatus, StayTypeDb, WaitlistStatus,
@@ -93,6 +96,7 @@ export const userAccount = pgTable('user_account', {
   staffId: uuid('staff_id').unique().references(() => staffProfile.id),
   username: text('username').notNull(),
   passwordHash: text('password_hash'),
+  passwordChangedAt: tz('password_changed_at'),
   mustChangePassword: boolean('must_change_password').notNull().default(true),
   status: text('status').$type<'invited' | 'active' | 'locked' | 'revoked'>().notNull().default('invited'),
   failedLoginCount: integer('failed_login_count').notNull().default(0),
@@ -142,6 +146,7 @@ export const session = pgTable('session', {
   revokedReason: text('revoked_reason'),
   ip: inet('ip'),
   userAgent: text('user_agent'),
+  activeRole: text('active_role').$type<Role>(),
 })
 
 export const delegation = pgTable('delegation', {
@@ -285,7 +290,15 @@ export const bedOffer = pgTable('bed_offer', {
   updatedAt: updatedAt(),
 })
 
-/** Every table above, for tests and tooling. */
+export const loginAttempt = pgTable('login_attempt', {
+  id: id(),
+  usernameNorm: text('username_norm').notNull(),
+  ip: inet('ip'),
+  succeeded: boolean('succeeded').notNull(),
+  createdAt: createdAt(),
+})
+
+/** Every table above, for tests and tooling. Each Stage 1 package keeps its own tables in its own file. */
 export const TABLES = {
   site, building, room, bed,
   staff_profile: staffProfile, user_account: userAccount, role_assignment: roleAssignment,
@@ -293,4 +306,6 @@ export const TABLES = {
   audit_event: auditEvent, config_item: configItem,
   accommodation_request: accommodationRequest, bed_claim: bedClaim, reservation, stay,
   waitlist_entry: waitlistEntry, bed_offer: bedOffer,
+  login_attempt: loginAttempt,
+  ...TABLES_PROPERTY, ...TABLES_STAFF, ...TABLES_ACCESS,
 } as const

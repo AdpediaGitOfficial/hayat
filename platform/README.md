@@ -1,6 +1,6 @@
 # Grand Hyatt Staff Accommodation Platform: production app
 
-Stage 0 (decisions and foundation) of `docs/PLAN.md` section 13. Next.js 14 (App Router) + React 18 + TypeScript (strict) on PostgreSQL 16 (D-101, D-102). The clickable prototype in `../prototype` is a separate project and is not touched by this one.
+Stage 0 (decisions and foundation) and the Stage 1 core (`docs/STAGE-1.md`) of `docs/PLAN.md` section 13. Next.js 14 (App Router) + React 18 + TypeScript (strict) on PostgreSQL 16 (D-101, D-102). The clickable prototype in `../prototype` is a separate project and is not touched by this one.
 
 Source of truth for behaviour: `../docs/DECISIONS.md`, then `../docs/PERMISSIONS.md`, `../docs/APPROVALS.md`, `../docs/PLAN.md`.
 
@@ -40,7 +40,9 @@ npm ci && npm run typecheck && npm run lint && npm run db:migrate && npm test &&
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm run lint` | `next lint` over `app`, `src`, `tests`, `scripts` |
 | `npm run db:migrate` | Applies pending migrations to `DATABASE_URL` |
-| `npm test` | Vitest: domain, policy and database constraint tests |
+| `npm test` | Vitest: domain, policy, database constraint and HTTP-level API tests (real PostgreSQL) |
+| `npm run db:seed` | Demo sites and one user per role (username = employee ID; password `Welcome-GH-2026` or `SEED_PASSWORD`). Refuses to run in production |
+| `npm run e2e` | Playwright browser smoke tests. `npm run build` first; creates and drops its own database, starts the server on port 3120. Set `E2E_CHROMIUM` for a browser installed elsewhere |
 
 ## Layout (PLAN section 4)
 
@@ -80,9 +82,27 @@ Dockerfile, docker-compose.yml, .env.example
 - **Domain port**: the prototype's React-free rules (eligibility, bed conflict/overlap windows, approval clock, stay state, separation-of-duties check) in `src/domain/`, with their types. The prototype's in-memory store and its permission tables were not ported (the policy module replaces the latter).
 - **Containers and CI**: multi-stage `Dockerfile` (Next `output: 'standalone'`, non-root, separate `migrate` target), `docker-compose.yml`, `.github/workflows/ci.yml` with `platform` and `prototype` jobs.
 
+## Stage 1 core (WP-0)
+
+How a request becomes an action, in the order it happens:
+
+1. **`route({...})`** (`src/server/http.ts`) wraps every API handler. It checks same-origin (CSRF), resolves the session cookie to an acting identity, applies the "change your password first" restriction, checks the declared policy action, validates the JSON body with Zod, and turns a `Result` into JSON. `access` is mandatory (`public`, `authenticated` or a policy `action`), so a route cannot exist without saying who may call it.
+2. **Sessions** (`src/server/auth/session.ts`): opaque 32-byte token in an HttpOnly, SameSite=Lax (Secure in production) cookie; only its SHA-256 is stored. Idle and absolute expiry come from configuration (staff roles 30 min / 12 h, residents 12 h / 7 d; placeholders, G-11). Revoking is an `UPDATE`; `revokeAllSessions()` is what Mark as Left will call.
+3. **Actor** (`src/server/auth/actor.ts`): one active mode per session (S-2). `sites` is the union of the role's site assignments (`'all'` for a global one; building-scope gives none, S-6). `caps` are active, started, unexpired capability grants.
+4. **`runCommand(rc, fn)`** (`src/server/command/run.ts`): one transaction per business action. A failure result or a throw rolls back everything, including the audit row. Known database errors (`23P01`, `40P01`, `23505`, `GH001`, `23503`, `23514`) become results, not 500s. `audit(c, {...})` writes inside the same transaction.
+5. **Results** (`src/server/command/result.ts`): every refusal carries a `reason`, an `owner` and a `next` action (D-93). Out-of-scope reads answer 404 (AT-001/002); lacking the action answers 403.
+6. **Configuration** (`src/server/config/registry.ts`): every tunable value with its default, type and decision reference (`getConfig(db, key, siteId?)`). Versions live in `config_item`; OPEN decisions are placeholders here, never hard-coded elsewhere.
+7. **Pages**: server components call `requirePage(action?)` (`src/server/auth/page.ts`); navigation is `src/app-nav.ts`, filtered by the policy. UI components are in `src/ui` (`'use client'`; `src/ui/status.ts` is server-safe), browser calls go through `src/ui/api.ts`.
+
+Sign-in refuses with one wording whether the username exists or not, and hashes either way. Five failures in 15 minutes lock the account (attempts made while locked are not recorded, so the lock cannot be extended or used as a denial of service), and one address is capped at four times that.
+
+**Tests**: `tests/api/harness.ts` calls the real route handlers with real `Request` objects against the real database, connected as `app_role`. `tests/api/auth.test.ts` covers expiry, lockout, revocation, token hashing, CSRF, must-change and actor resolution. `tests/api/contract.test.ts` generates the permission contract from `POLICY` and the route files: every route declares access, and for every policy-guarded route and every role the API answers exactly what the policy says.
+
+**Trusted proxy**: the client address comes from `X-Forwarded-For`/`X-Real-IP`. Run behind a proxy that overwrites those headers; it is used for rate limiting and the audit log only, never for authorization.
+
 ## What Stage 0 does not contain
 
-Authentication and sessions logic (tables only), commands/repositories, any screen beyond the home page, background jobs (pg-boss), notifications, the clearance, key, cleaning, work-order, visitor and incident tables (Stages 2 to 4), the approval and transfer/extension/emergency tables (Stage 2), row-level security (optional second line of defence in PLAN section 6), and Playwright end-to-end tests. Argon2id, Zod and pg-boss are decided (T-3, T-5, T-8) but not installed yet; they arrive with the first code that uses them.
+Background jobs (pg-boss), notifications, the clearance, key, cleaning, work-order, visitor and incident tables (Stages 2 to 4), the approval and transfer/extension/emergency tables (Stage 2), row-level security (optional second line of defence in PLAN section 6). (Stage 0 had no authentication, commands or screens; the Stage 1 core above adds them. pg-boss is decided, T-8, and arrives with the first background job.)
 
 ## Conventions worth knowing
 

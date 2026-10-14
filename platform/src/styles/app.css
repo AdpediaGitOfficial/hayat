@@ -1,0 +1,20 @@
+/* Application chrome added in Stage 1 (sign-in, shell extras). Component styles live in components.css. */
+.login-card{width:min(420px,100%)}
+.login-card .card-body{display:flex;flex-direction:column;gap:20px;padding:28px}
+.login-brand{display:flex;align-items:center;gap:12px}
+.login-brand .sb-mark{width:40px;height:40px;font-size:13px;color:#fff}
+.login-brand b{font-family:var(--font-display);letter-spacing:.14em;text-transform:uppercase;font-size:13px;font-weight:500;display:block}
+.login-brand span{color:var(--ink-muted);font-size:12.5px}
+.form{display:flex;flex-direction:column;gap:14px}
+.popover{position:absolute;right:0;top:44px;width:260px;padding:8px;z-index:50;box-shadow:var(--shadow-raised)}
+.popover .nav-item{color:var(--ink)}
+.popover .nav-item:hover{background:var(--glass-subtle)}
+.popover .nav-item.active{background:var(--brand-soft, var(--glass-subtle));color:var(--ink)}
+.mode-pill{font-size:12px}
+.skip{position:absolute;left:-999px;top:8px;z-index:100;background:var(--ink);color:#fff;padding:6px 10px;border-radius:var(--radius-md)}
+.skip:focus{left:8px}
+.module-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.module-grid a{text-decoration:none;color:inherit}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;font-size:13.5px}
+.kv dt{color:var(--ink-muted)}
+.kv dd{margin:0}

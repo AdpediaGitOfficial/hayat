@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import '@/styles/tokens.css'
-import './globals.css'
+import '@/styles/base.css'
+import '@/styles/components.css'
+import '@/styles/app.css'
 
 export const metadata: Metadata = {
   title: 'Grand Hyatt Staff Accommodation',
