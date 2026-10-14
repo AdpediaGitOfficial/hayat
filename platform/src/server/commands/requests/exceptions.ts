@@ -83,7 +83,7 @@ export function requestException(rc: RequestContext, i: RequestExceptionInput): 
 
 /* ---------------- the Policy Approver decides ---------------- */
 
-/** A Policy Approver is never the request's subject or its submitter (D-25, D-26). */
+/** A Policy Approver is never the request's subject, its submitter or the one who asked for the exception (D-25, D-26). */
 async function loadForPolicyApprover(c: CommandContext, id: string, what: string): Promise<Failure | { peek: RequestRow }> {
   const peek = await loadRequest(c.tx, id)
   if (!peek) return fail.notFound()
@@ -92,6 +92,10 @@ async function loadForPolicyApprover(c: CommandContext, id: string, what: string
   const self = notSelf(c, peek.staffId, what)
   if (self) return self
   if (peek.submittedBy === c.user.id) return fail.sod(`You filed this request, so you cannot ${what}`, 'A different Policy Approver decides it (D-26)')
+  // The one who ASKED for the exception does not decide it either (maker-checker): an Accommodation Admin who also holds the Policy Approver capability.
+  const [open] = await c.tx.select({ askedBy: requestExceptionAsk.askedBy }).from(requestExceptionAsk)
+    .where(and(eq(requestExceptionAsk.requestId, id), eq(requestExceptionAsk.status, 'asked'))).limit(1)
+  if (open?.askedBy === c.user.id) return fail.sod(`You asked for this exception, so you cannot ${what}`, 'A different Policy Approver decides it (D-26)')
   return { peek }
 }
 
