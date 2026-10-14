@@ -46,7 +46,9 @@ Grand Hyatt red palette, clean modern enterprise UI, glass effects. Error/danger
 
 **Stack (D-101, D-102):** Next.js 14 (App Router) + React 18 + TypeScript in `prototype/`; PostgreSQL for production (see `prototype/README.md`; `npm run dev`, `npm test`). Design tokens and components follow `docs/design/GrandHyatt-Design-System.html`.
 
-**Step 0 (built, awaiting review): clickable prototype.** Dummy data, no real backend/auth/notifications (D-97 to D-100).
+**Production app: Stage 0 built in `platform/`** (see `platform/README.md`; `docs/PLAN.md` has the result and open decisions S-1 to S-7). Run `cd platform && npm run db:migrate && npm test` against a local Postgres 16.
+
+**Step 0 (built, hardened): clickable prototype.** Dummy data, no real backend/auth/notifications (D-97 to D-100).
 Prototype flows, in priority order:
 1. Role switcher + role-based dashboards
 2. Bed inventory grid (site → room → bed, physical state + upcoming reservations)

@@ -264,6 +264,28 @@ Total indicative range: **22–29 weeks** from the start of Stage 0. Stages over
 
 ---
 
+### Stage 0 result
+
+Built and verified in `platform/` (own README): Next.js 14 + strict TypeScript + Vitest; schema v0 in seven SQL migrations with a checksummed runner; the bed-overlap exclusion constraint, one-active-stay and one-active-offer indexes, a database transition guard, an append-only audit table, a login-less `app_role` with no delete rights; a deny-by-default policy module tested against `docs/PERMISSIONS.md`; an injectable clock; a React-free domain port; `GET /api/health`; Dockerfile, compose file and CI workflow. Gate run: typecheck and lint clean, migrations apply, **171 tests pass against a real Postgres**, build succeeds. The container and CI files are written but unrun here (no Docker daemon).
+
+Deviations from section 5: claims have a `released_at` (a released claim stays as history instead of being deleted); "active stay" covers provisional, active and resolution-pending; stay and reservation hold no dates of their own (the claim does); an extra trigger makes audit and config append-only even for the table owner.
+
+**Decisions this surfaced (for Stage 1):**
+
+| # | Question | Recommendation |
+|---|---|---|
+| S-1 | **Does a stay's end date mean the last night or the departure day?** As stored (`[start, end+1)`), a stay ending 14 Oct conflicts with one arriving 14 Oct, which clashes with same-day turnover (D-18). | Treat the end date as the **departure day** (end-exclusive) and say so in the specification; same-day turnover then works. Needs Grand Hyatt to confirm. |
+| S-2 | How does "Resident base role + operational role" become one actor? | One actor per mode ("My stay" / "My work"), as D-96 suggests. |
+| S-3 | Five starred cells in `PERMISSIONS.md` name no capability (AA Visitors, Res Visitors, AA Audit log, AA System configuration, Mgr export). | Left denied; Report Export is now proposed for Mgr (SPEC-AMENDMENTS). Others need an answer. |
+| S-4 | SA is "Full" on Requests but D-25 says SA should not decide exceptions. | Exceptions and clearance waivers stay Policy Approver only. |
+| S-5 | `PERMISSIONS.md` and the prototype differ: the prototype lets AA assign housekeeping and the Policy Approver sign off migration. | Follow the matrix; fix the prototype or the matrix. |
+| S-6 | Building-level scope exists in `role_assignment` but not in the actor/resource types. | Add in Stage 1. |
+| S-7 | Next.js 14.2.35 has open advisories (1 critical, 4 high) fixed only in later majors; D-101 pins 14. | Revisit before the Stage 6 penetration test; the image optimiser is already disabled. |
+
+Also noted for the commands: take a row lock on the bed first so a lost race always returns the clean "bed taken" error (a deadlock code is also possible and both must map to it); expired sessions need a retention job under a different role; no-self-approval and bed-state-agrees-with-claims stay in the application, not the database.
+
+---
+
 ## 14. Release blockers and when they bite
 
 | Blocker (SRS §18.1) | Latest useful date | Consequence if late |
