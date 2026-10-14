@@ -54,6 +54,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-I nav
 
   // >>> WP-J nav (housekeeping and readiness)
+  // The board (SA, Reception, Maintenance Coordinator; Manager and Auditor see a summary), a housekeeper's rooms and the inspection queue.
+  { id: 'housekeeping', label: 'Housekeeping', href: '/housekeeping', icon: 'brush', group: 'Accommodation', actions: ['housekeeping_readiness.view', 'housekeeping_readiness.clean', 'housekeeping_readiness.final_inspection'] },
   // <<< WP-J nav
 
   // >>> WP-A nav (property and inventory)

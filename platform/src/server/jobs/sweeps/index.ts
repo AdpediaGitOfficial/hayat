@@ -22,6 +22,7 @@ import './stays'
 // <<< WP-I sweeps
 
 // >>> WP-J sweeps (cleaning reminders)
+import './readiness'
 // <<< WP-J sweeps
 
 // >>> WP-G sweeps (emergency)
