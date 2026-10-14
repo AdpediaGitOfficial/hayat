@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
-import { site, stay } from '@/server/db/schema'
+import { site, staffProfile, stay } from '@/server/db/schema'
 import { checkoutRequest, extensionRequest, transferRequest } from '@/server/db/schema.stays'
 import { getDb } from '@/server/db/client'
 import { can, scopeFilter, type Actor } from '@/server/policy'
@@ -152,7 +152,7 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       const today = localDate(now, dstSite?.tz ?? info.siteTimeZone)
       const to = endOf.get(t.stayId) ?? undefined
       if (!to || to > today) {
-        suggestions = (await suggestBeds(db, { staffId: t.staffId, siteId: t.destinationSiteId, from: today, to: to ?? undefined, limit: 8, excludeBedIds: [t.fromBedId], now })).filter(b => b.state === 'available').slice(0, 5)
+        suggestions = (await suggestBeds(db, { staffId: t.staffId, siteId: t.destinationSiteId, from: today, to: to ?? undefined, limit: 8, excludeBedIds: [t.fromBedId], transferId: t.id, now })).filter(b => b.state === 'available').slice(0, 5)
       }
     }
     const needs = exceptionPath && (t.status === 'requested' || t.status === 'approved' || t.status === 'failed') ? await exceptionNeeds(db, t, now) : []
@@ -162,6 +162,13 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       viewerCanDecide: n.state === 'waiting' && can(actor, 'requests_waitlist.approve_exception', { siteId: n.siteId })
         && ![t.staffId, t.otherStaffId, t.requestedByStaffId].some(x => !!x && x === actor.staffId),
     }))
+    // A Policy Approver who has to decide on someone is told who it is, as the approvals inbox already does (the name is not directory data for them).
+    for (const e of exceptions) {
+      if (e.viewerCanDecide && e.name === 'Resident') {
+        const [p] = await db.select({ n: staffProfile.fullName }).from(staffProfile).where(eq(staffProfile.id, e.staffId)).limit(1)
+        if (p) e.name = p.n
+      }
+    }
     let askableBeds: TransferListRow['askableBeds'] = []
     if (exceptionPath && t.kind === 'transfer' && open && info && keys.destination.viewerCanGive) {
       const today = localDate(now, dstSite?.tz ?? info.siteTimeZone)

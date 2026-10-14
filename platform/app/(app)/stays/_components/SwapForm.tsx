@@ -68,14 +68,16 @@ export function SwapForm({ choices, partnerLookup = false, exceptionPath = false
           </Field>
         )}
         {byId && (
-          <Field label="Second resident's employee ID" hint="Only the name and the site of an active stay are shown." error={err?.fields?.otherEmployeeId}>
-            <div className="row wrap">
-              <Input value={employeeId} onChange={e => { setEmployeeId(e.target.value); setFound(undefined); setLookupMsg(undefined) }} style={{ maxWidth: 220 }} />
+          <>
+            <Field label="Second resident's employee ID" hint="Only the name and the site of an active stay are shown." error={err?.fields?.otherEmployeeId}>
+              <Input value={employeeId} onChange={e => { setEmployeeId(e.target.value); setFound(undefined); setLookupMsg(undefined) }} />
+            </Field>
+            <div>
               <Button size="sm" disabled={looking || !employeeId.trim()} onClick={() => void check()}>Check</Button>
+              {found && <p className="body-sm" data-testid="partner-found" style={{ margin: '6px 0 0' }}><b>{found.name}</b> · {found.siteName}</p>}
+              {lookupMsg && <p className="body-sm" data-testid="partner-missing" style={{ margin: '6px 0 0' }}>{lookupMsg}</p>}
             </div>
-            {found && <p className="body-sm" data-testid="partner-found" style={{ margin: '6px 0 0' }}><b>{found.name}</b> · {found.siteName}</p>}
-            {lookupMsg && <p className="body-sm" data-testid="partner-missing" style={{ margin: '6px 0 0' }}>{lookupMsg}</p>}
-          </Field>
+          </>
         )}
         <Field label={`Has ${a ? label(a) : 'the first resident'} agreed?`} hint="Leave on 'Not yet' and they confirm in the app." optional>
           <Select value={ca} onChange={e => setCa(e.target.value as Via)}><option value="">Not yet</option><option value="in_person">Yes, in person</option><option value="phone">Yes, by phone</option><option value="written">Yes, in writing</option></Select>
