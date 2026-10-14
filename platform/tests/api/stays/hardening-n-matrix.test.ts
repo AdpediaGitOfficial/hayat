@@ -4,9 +4,9 @@
  * people hold and the cleaning tasks exactly as they were (a snapshot compared before and after), and a refused EXECUTION records
  * the failure (status failed, the reason, an audit row). Shipped state of every proposal (P-09 off, P-10 on).
  */
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { admin, closeAll } from '../harness'
-import { mkItem } from '../fixtures3'
+import { mkItem as mkItemRow } from '../fixtures3'
 import { auditRows, claimRow, day, mkReservation, mkStay, person, residents, setBedState, setConfigValue, stayRow, transferRow, world } from './helpers'
 import { approveTransfer } from '@/server/commands/stays/decideTransfer'
 import { executeTransfer } from '@/server/commands/stays/executeTransfer'
@@ -14,6 +14,15 @@ import { requestSwap, requestTransfer } from '@/server/commands/stays/requestTra
 import { cross, twoStays, xreq } from './crossHelpers'
 
 afterAll(closeAll)
+
+/**
+ * The keys a person holds are part of what must not change, so every scene gives the residents a key. The shared database is read by
+ * other files that list EVERY key (a Super Admin's list is paged), so these rows live for one test only and are removed afterwards
+ * (a plain item without events: nothing in the application deletes, the test does its own tidying).
+ */
+const madeItems: string[] = []
+const mkItem = async (o: Parameters<typeof mkItemRow>[0]) => { const id = await mkItemRow(o); madeItems.push(id); return id }
+afterEach(async () => { const ids = madeItems.splice(0); if (ids.length) await admin().query(`DELETE FROM handover_item WHERE id = ANY($1::uuid[])`, [ids]) })
 
 const male = async (staffId: string): Promise<void> => { await admin().query(`UPDATE staff_profile SET gender = 'male' WHERE id = $1`, [staffId]) }
 const female = async (staffId: string): Promise<void> => { await admin().query(`UPDATE staff_profile SET gender = 'female' WHERE id = $1`, [staffId]) }

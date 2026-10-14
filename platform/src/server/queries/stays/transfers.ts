@@ -6,6 +6,9 @@ import { can, scopeFilter, type Actor } from '@/server/policy'
 import { getClock } from '@/server/runtime'
 import { getConfig } from '@/server/config/registry'
 import { suggestBeds, type BedSuggestion } from '@/server/allocation'
+import { checkEligibility } from '@/server/eligibility'
+import { claimPeriod } from '@/domain/claims'
+import { bed as bedTable, room } from '@/server/db/schema'
 import { exceptionNeeds, type ExceptionNeed } from '@/server/commands/stays/transferException'
 import { scopeSql } from '@/server/queries/scope'
 import { bedInfoMap, localDate, personMap, personOf } from './common'
@@ -84,6 +87,11 @@ export interface TransferListRow {
   exceptions: ExceptionView[]
   /** P-10 in force (the setting is on). */
   exceptionPath: boolean
+  /**
+   * Beds of the destination site that are ready and free but fail a gender or grade rule that a Policy Approver may waive (P-10, proposed,
+   * pending client sign-off). Listed for whoever chooses the bed, so the choice can be made WITH the exception asked for. Empty otherwise.
+   */
+  askableBeds: { bedId: string; label: string; roomName: string; code: string; reasons: string[] }[]
   /** Set when the viewer is one of the two residents in a swap (resident mode): they answer for themselves. */
   viewerParty: 'a' | 'b' | null
   /** `approve` = the viewer can give at least one missing key; `chooseBed` = they give the destination key, so they pick the bed. */
@@ -154,6 +162,12 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       viewerCanDecide: n.state === 'waiting' && can(actor, 'requests_waitlist.approve_exception', { siteId: n.siteId })
         && ![t.staffId, t.otherStaffId, t.requestedByStaffId].some(x => !!x && x === actor.staffId),
     }))
+    let askableBeds: TransferListRow['askableBeds'] = []
+    if (exceptionPath && t.kind === 'transfer' && open && info && keys.destination.viewerCanGive) {
+      const today = localDate(now, dstSite?.tz ?? info.siteTimeZone)
+      const to = endOf.get(t.stayId) ?? undefined
+      if (!to || to > today) askableBeds = await askable(db, t, today, to, now)
+    }
     const waiting = exceptionWaiting(exceptions) ?? waitingOf(t, keys, crossSite)
     out.push({
       id: t.id, kind: t.kind, status: t.status, siteId: t.siteId, siteName: srcSite?.name ?? '', destinationSiteId: t.destinationSiteId, destinationSiteName: dstSite?.name ?? '',
@@ -166,7 +180,7 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
       failureReason: t.status === 'failed' ? t.failureReason : null,
       failureNext: t.status === 'failed' ? ((t.failureDetail as { next?: string } | null)?.next ?? null) : null,
       failedAt: t.failedAt?.toISOString() ?? null, executedAt: t.executedAt?.toISOString() ?? null, decisionReason: t.decisionReason,
-      suggestions, exceptions, exceptionPath,
+      suggestions, exceptions, exceptionPath, askableBeds,
       raisedBy: t.requestedByStaffId && t.requestedByStaffId !== t.staffId && t.requestedByStaffId !== t.otherStaffId ? { name: personOf(people, t.requestedByStaffId).name } : null,
       viewerParty: t.kind === 'swap' && actor.role === 'Res' && actor.staffId ? (actor.staffId === t.staffId ? 'a' : actor.staffId === t.otherStaffId ? 'b' : null) : null,
       can: {
@@ -183,6 +197,23 @@ export async function listTransfers(actor: Actor, f: TransferFilters = {}, now: 
 }
 
 const either = (actor: Actor, action: 'transfers_swaps.approve', a: string, b: string) => can(actor, action, { siteId: a }) || can(actor, action, { siteId: b })
+
+/** Ready, free beds of the destination site that this person fails only by a rule a Policy Approver may waive (P-10, proposed, pending client sign-off). */
+async function askable(db: ReturnType<typeof getDb>, t: typeof transferRequest.$inferSelect, from: string, to: string | undefined, now: Date): Promise<TransferListRow['askableBeds']> {
+  const period = claimPeriod(from, to)
+  const candidates = await db.select({ bedId: bedTable.id, code: bedTable.code, roomName: room.name }).from(bedTable).innerJoin(room, eq(room.id, bedTable.roomId))
+    .where(and(
+      eq(bedTable.siteId, t.destinationSiteId), eq(bedTable.state, 'available'), sql`${bedTable.archivedAt} is null`, sql`${room.archivedAt} is null`, sql`${bedTable.id} <> ${t.fromBedId}`,
+      sql`NOT EXISTS (SELECT 1 FROM bed_claim c WHERE c.bed_id = ${bedTable.id} AND c.released_at IS NULL AND c.period && ${period}::daterange)`,
+    )).orderBy(room.name, bedTable.code).limit(40)
+  const out: TransferListRow['askableBeds'] = []
+  for (const cand of candidates) {
+    const e = await checkEligibility(db, t.staffId, cand.bedId, now, { transferId: t.id })
+    if (e && !e.ok && e.exceptionable) out.push({ bedId: cand.bedId, label: `${cand.roomName} · ${cand.code}`, roomName: cand.roomName, code: cand.code, reasons: e.reasons })
+    if (out.length >= 8) break
+  }
+  return out
+}
 
 /** A destination that needs a Policy Approver comes first: nothing else can be finished before that decision. */
 function exceptionWaiting(list: ExceptionView[]): WaitingFor | null {

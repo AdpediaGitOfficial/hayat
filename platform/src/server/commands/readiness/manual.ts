@@ -44,6 +44,8 @@ const NOT_FOR: Record<string, { why: (code: string) => string; owner: string; ne
 
 export function openCleaningTaskManual(rc: RequestContext, i: OpenCleaningTaskManualInput): Promise<Result<OpenCleaningTaskManualOut>> {
   return runCommand(rc, async c => {
+    // A reason is mandatory here as well as in the route's schema: this is an exceptional hand action and its reason is what the audit shows.
+    if ((i.reason ?? '').trim().length < 3) return fail.invalid('Give a reason (at least 3 characters)', { reason: 'Say why this task is opened by hand' })
     // Bed first (the order of every readiness command), then its task.
     const [b] = await c.tx.select().from(bed).where(eq(bed.id, i.bedId)).limit(1).for('update')
     if (!b) return fail.notFound()
