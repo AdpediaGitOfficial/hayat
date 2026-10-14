@@ -24,6 +24,12 @@ export const NAV: readonly NavItem[] = [
   { id: 'notifications', label: 'Notifications', href: '/notifications', icon: 'bell', group: '' },
 
   // >>> WP-D nav (requests, approvals)
+  // Approvals inbox: those who may decide something (SA, AA, MC, Auditor, Backup Approver, Policy Approver).
+  { id: 'approvals', label: 'Approvals', href: '/approvals', icon: 'clipboard', group: 'Accommodation', actions: ['approvals_inbox.view'] },
+  // Requests and reservations: staff roles that work with them (Reception, AA, SA, Manager, Auditor), not the Resident (who has My accommodation).
+  { id: 'requests', label: 'Requests', href: '/requests', icon: 'list', group: 'Accommodation', actions: ['checkin_checkout.view'] },
+  // The Policy Approver's report of exceptions and their uses (also Super Admin and Auditor).
+  { id: 'exceptions', label: 'Exceptions', href: '/approvals/exceptions', icon: 'shield', group: 'Accommodation', actions: ['requests_waitlist.approve_exception', 'audit_log.view'] },
   // <<< WP-D nav
 
   // >>> WP-E nav (waitlist, offers)

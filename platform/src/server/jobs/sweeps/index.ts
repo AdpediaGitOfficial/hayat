@@ -4,6 +4,7 @@
 import '../../approvals/sweep'
 
 // >>> WP-D sweeps
+import './requests'
 // <<< WP-D sweeps
 
 // >>> WP-E sweeps (waitlist, offers)

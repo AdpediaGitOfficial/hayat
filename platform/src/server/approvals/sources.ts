@@ -3,6 +3,7 @@
  */
 
 // >>> WP-D approval sources (requests, exceptions)
+import '@/server/commands/approvals/sources'
 // <<< WP-D approval sources
 
 // >>> WP-E approval sources (waitlist priority, renewal)

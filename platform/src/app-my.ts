@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import type { CurrentUser } from '@/server/auth/current'
 
 // >>> WP-D my imports
+import { renderMyRequests } from '../app/(app)/requests/_components/MySection'
 // <<< WP-D my imports
 // >>> WP-E my imports
 // <<< WP-E my imports
@@ -24,5 +25,6 @@ export const MY_SECTIONS: readonly MySection[] = [
   // >>> WP-E my sections (bed offer, waitlist)
   // <<< WP-E my sections
   // >>> WP-D my sections (request, reservation)
+  { id: 'requests', render: renderMyRequests },
   // <<< WP-D my sections
 ]
