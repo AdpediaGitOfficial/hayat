@@ -41,6 +41,7 @@ export const eligibilityException = pgTable('eligibility_exception', {
   kind: text('kind').$type<'gender' | 'grade'>().notNull(),
   siteId: uuid('site_id'),
   requestId: uuid('request_id'),
+  transferRequestId: uuid('transfer_request_id'),
   grantedBy: uuid('granted_by').notNull(),
   reason: text('reason').notNull(),
   evidence: text('evidence').notNull(),

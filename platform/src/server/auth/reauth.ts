@@ -8,7 +8,7 @@
 import { and, eq, gt, sql } from 'drizzle-orm'
 import { loginAttempt, userAccount } from '@/server/db/schema'
 import { getDb } from '@/server/db/client'
-import type { CommandContext } from '@/server/command/context'
+import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, type Failure } from '@/server/command/result'
 import { getConfig } from '@/server/config/registry'
 import { verifyPassword } from './password'
@@ -31,4 +31,31 @@ export async function confirmPassword(c: CommandContext, password: string | unde
     return fail.invalid('That password is not right', { confirmPassword: 'Wrong password' })
   }
   return undefined
+}
+
+/**
+ * The same check at the API layer, for routes that declare `reauth` (src/server/http.ts): used where the command itself is
+ * called from many places, so the API is where D-03 is enforced. Same throttle, same persisted failures.
+ */
+export async function confirmPasswordRc(rc: RequestContext, password: string | undefined): Promise<Failure | undefined> {
+  if (!password) return fail.invalid('Enter your password to confirm this action', { confirmPassword: 'Required' })
+  const db = getDb()
+  const now = rc.clock.now()
+  const max = await getConfig(db, 'auth.lockout_attempts')
+  const windowMin = await getConfig(db, 'auth.lockout_minutes')
+  const since = new Date(now.getTime() - windowMin * 60_000)
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(loginAttempt)
+    .where(and(eq(loginAttempt.usernameNorm, key(rc.user.id)), eq(loginAttempt.succeeded, false), gt(loginAttempt.createdAt, since)))
+  if (n >= max) return fail.rateLimited(windowMin)
+  const [u] = await db.select({ hash: userAccount.passwordHash }).from(userAccount).where(eq(userAccount.id, rc.user.id)).limit(1)
+  if (!u?.hash || !(await verifyPassword(u.hash, password))) {
+    await db.insert(loginAttempt).values({ usernameNorm: key(rc.user.id), ip: rc.ip ?? null, succeeded: false, createdAt: now })
+    return fail.invalid('That password is not right', { confirmPassword: 'Wrong password' })
+  }
+  return undefined
+}
+
+/** Is this action configured to re-ask for the password at the API? Server components use it to show the field only when needed. */
+export async function reauthEnabled(action: 'emergency.initiate' | 'emergency.decide' | 'access.role_change' | 'access.grant' | 'waitlist.queue_override'): Promise<boolean> {
+  return (await getConfig(getDb(), 'auth.reauth_actions')).includes(action)
 }

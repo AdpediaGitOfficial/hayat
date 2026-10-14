@@ -13,6 +13,8 @@ A role-based web platform that manages staff housing from staff record → eligi
 5. `docs/GAP-ANALYSIS.md` and `docs/PLAN.md`: review of the Full Project Document v1.1 and the external HTML prototype; the production build plan (decisions T-1 to T-10, stages, acceptance-test mapping, prototype hardening list).
 6. `docs/source/approval-tree-v1.1.md`, `user-journey-and-module-map.md`, `journey-review-notes.md`, `user-groups-draft.md`, `Grand_Hyatt_Full_Project_Document_v1.1.docx`, `external-html-prototype.html`: earlier inputs, kept for history. The Full Project Document §20/§21 predate D-25 (Policy Approver); see `GAP-ANALYSIS.md` section 2 for the conflicts.
 
+**Proposed policies (DECISIONS.md section 15, P-01 and up) are recommendations pending client sign-off, not decisions**: build them behind a setting, show them as pending, never present them as approved.
+
 If a request conflicts with DECISIONS.md, point out the conflict before building. Never hardcode an OPEN item; make it configurable or a clearly marked placeholder.
 
 ## Non-negotiable invariants

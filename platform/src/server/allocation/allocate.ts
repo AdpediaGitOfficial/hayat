@@ -25,6 +25,8 @@ export interface AllocateInput {
   kind: ClaimKind
   /** Scopes exceptions that were granted for one request. */
   requestId?: string
+  /** Scopes an exception granted for one transfer (P-10). */
+  transferId?: string
   // No "ignore this claim" option on purpose: a caller that replaces its own claim (transfer, swap, extension) releases
   // it first in the same transaction, and accepting an offer converts the hold in place (convertClaim) instead of allocating.
   /** Check-in: the bed must be ready, not merely allocatable (D-18, D-59). */
@@ -56,7 +58,7 @@ export async function allocateBed(c: CommandContext, a: AllocateInput): Promise<
 
   let exceptionIds: string[] = []
   if (!a.skipEligibility) {
-    const e = await checkEligibility(c.tx, a.staffId, a.bedId, c.now, { requestId: a.requestId })
+    const e = await checkEligibility(c.tx, a.staffId, a.bedId, c.now, { requestId: a.requestId, transferId: a.transferId })
     if (!e) return fail.notFound()
     if (!e.ok) {
       return fail.conflict(e.reasons.join('; '), e.exceptionable ? 'Policy Approver' : 'Accommodation Admin',
@@ -69,7 +71,7 @@ export async function allocateBed(c: CommandContext, a: AllocateInput): Promise<
   const conflicts = await overlappingClaims(c.tx, a.bedId, a.from, a.to)
   if (conflicts.length) {
     const held = conflicts.some(x => x.kind === 'offer_hold')
-    const suggestions = await suggestBeds(c.tx, { staffId: a.staffId, siteId: b.siteId, from: a.from, to: a.to, limit: 3, excludeBedIds: [a.bedId], requestId: a.requestId, now: c.now })
+    const suggestions = await suggestBeds(c.tx, { staffId: a.staffId, siteId: b.siteId, from: a.from, to: a.to, limit: 3, excludeBedIds: [a.bedId], requestId: a.requestId, transferId: a.transferId, now: c.now })
     return fail.conflict(
       held ? `Bed ${b.code} is held by a bed offer` : `Bed ${b.code} is already taken for those dates`,
       held ? 'The offered resident' : 'Another admin',

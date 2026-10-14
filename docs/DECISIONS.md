@@ -199,6 +199,31 @@ Full table: `APPROVALS.md`.
 
 ---
 
+## 15. Proposed policies (pending client sign-off)
+
+These are **recommendations implemented behind settings, not decisions**. Each shows as "Proposed, pending client sign-off" in System configuration and in the sign-off register (SRS section 17). Rule for the shipped default: ON only where the code is made to match something already written down (APPROVALS.md, D-03, AT-021, SPEC-AMENDMENTS); OFF (the previous behaviour) where the proposal gives anyone new authority, adds a new restriction or shows new data. Changing a setting is a new audited configuration version. When Grand Hyatt answers, move the row into the numbered decisions above and note the date.
+
+| # | Proposal | Setting | Ships | Status |
+|---|---|---|---|---|
+| P-01 | A Policy Approver or Backup Approver may decide a standard request, transfer or extension once it reaches the backup level of the approval clock (APPROVALS.md names them as backup, PERMISSIONS.md gave only AA and SA). The inbox and the API now agree. (S-14) | `approvals.escalation_backup` | ON | PROPOSED, pending client sign-off |
+| P-02 | Password re-confirmation (D-03) enforced at the API for emergency initiation, role changes and queue overrides (named in D-03); emergency decisions and capability grants selectable. (S-18) | `auth.reauth_actions` | D-03 set ON, extras OFF | PROPOSED, pending client sign-off |
+| P-03 | Key desk office hours 08:00 to 20:00 per site; every movement records whether it was out of hours; optional enforcement (Reception refused out of hours, Night Keys holders and admins allowed). (S-19) | `keys.office_hours`, `keys.enforce_office_hours` | flag only; enforcement OFF | PROPOSED, pending client sign-off |
+| P-04 | At least one photo or file required to mark a key damaged. (S-19) | `keys.damage_evidence_required` | OFF | PROPOSED, pending client sign-off |
+| P-05 | A resident may report a key they hold as lost; never mark returned or found. (S-19) | `keys.resident_may_report_lost` | OFF | PROPOSED, pending client sign-off |
+| P-06 | A Policy Approver waiver of a lost key retires the key record (history kept) so the stay can close. (S-20) | `clearance.waiver_writes_off_key` | ON | PROPOSED, pending client sign-off |
+| P-07 | Clearance items completed only by their owner: Reception, AA or SA, Maintenance Coordinator. (S-20) | `clearance.strict_item_owners` | OFF | PROPOSED, pending client sign-off |
+| P-08 | A person who never had a stay, reservation or request at any site is marked Left only by a Super Admin. (S-20, S-8) | `exit.sited_only` | OFF | PROPOSED, pending client sign-off |
+| P-09 | Reception may raise a transfer or swap on behalf of a resident at their site; never approve. (S-21) | `transfers.reception_may_raise` | OFF | PROPOSED, pending client sign-off |
+| P-10 | A Policy Approver may grant a recorded gender or grade exception for one transfer destination, as for a request (D-25). (S-21) | `transfers.exception_path` | ON | PROPOSED, pending client sign-off |
+| P-11 | An admin may name a swap partner at another site by employee ID; only name and site of an active stay are shown. (S-21) | `transfers.swap_partner_lookup` | OFF | PROPOSED, pending client sign-off |
+| P-12 | After a cross-site move, stray future bookings are cancelled (current) or left for the Admin to review. (S-21) | `transfers.future_bookings` | cancel | PROPOSED, pending client sign-off |
+| P-13 | A bed that is not ready cannot be offered for a start date inside the lead time (default 1 day); aligns with AT-021 and SPEC-AMENDMENTS C-6. (S-22) | `readiness.offer_lead_days` | ON (1) | PROPOSED, pending client sign-off |
+| P-14 | Reception or a Super Admin may open a cleaning task by hand, with a reason, for a bed in Needs cleaning or Inspection required that has none (migrated or seeded data). Stage 4 work-order completion opens one automatically. (S-22) | none (action `housekeeping_readiness.assign`) | ON | PROPOSED, pending client sign-off |
+
+Not changed, by design: the Housekeeping capability carries no site (job scope, D-22: assignment is the scope); the picker for assigning a cleaner lists holders by relevance to the site. D-72 (key model for shared rooms) stays open: item types are configuration.
+
+---
+
 ## Open questions for Grand Hyatt (consolidated)
 
 1. Primary/backup approver names per route; who holds Policy Approver (D-25).

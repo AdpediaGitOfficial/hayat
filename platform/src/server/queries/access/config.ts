@@ -25,6 +25,8 @@ export interface ConfigRow {
   version: number | null
   ref: string
   status: DecisionStatus
+  /** P-number when this is a proposed policy pending client sign-off. */
+  proposed: string | null
   perSite: boolean
   /** The allowed values of a setting that is a choice from a fixed list. */
   options?: string[]
@@ -60,7 +62,7 @@ export async function listConfig(actor: Actor): Promise<ConfigRow[]> {
     rows.push({
       key, group: def.group, label: def.label, description: def.description, default: def.default,
       value: await getConfig(db, key), source: global && storedValid ? 'saved' : 'default', storedInvalid: !!global && !storedValid,
-      version: global?.version ?? null, ref: def.ref, status: def.status, perSite: !!def.perSite, options: optionsOf(def),
+      version: global?.version ?? null, ref: def.ref, status: def.status, proposed: def.proposed ?? null, perSite: !!def.perSite, options: optionsOf(def),
       changedAt: global?.createdAt.toISOString() ?? null, changedBy: global?.by ?? null, reason: global?.reason ?? null,
       overrides: mine.filter(l => l.scopeSiteId !== null).map(l => ({
         siteId: l.scopeSiteId!, siteCode: l.siteCode ?? '?', siteName: l.siteName ?? '', value: l.value, version: l.version,
@@ -71,7 +73,7 @@ export async function listConfig(actor: Actor): Promise<ConfigRow[]> {
   return rows
 }
 
-export async function getConfigHistory(actor: Actor, key: string, siteId?: string): Promise<{ row: Pick<ConfigRow, 'key' | 'label' | 'description' | 'ref' | 'status' | 'perSite' | 'default'>; versions: ConfigVersion[] } | undefined> {
+export async function getConfigHistory(actor: Actor, key: string, siteId?: string): Promise<{ row: Pick<ConfigRow, 'key' | 'label' | 'description' | 'ref' | 'status' | 'proposed' | 'perSite' | 'default'>; versions: ConfigVersion[] } | undefined> {
   if (!decide(actor, 'system_config.view').allowed || !isConfigKey(key)) return undefined
   const def = CONFIG[key] as ConfigDef
   const db = getDb()
@@ -82,7 +84,7 @@ export async function getConfigHistory(actor: Actor, key: string, siteId?: strin
     .where(and(eq(configItem.key, key), siteId ? eq(configItem.scopeSiteId, siteId) : isNull(configItem.scopeSiteId)))
     .orderBy(desc(configItem.version))
   return {
-    row: { key, label: def.label, description: def.description, ref: def.ref, status: def.status, perSite: !!def.perSite, default: def.default },
+    row: { key, label: def.label, description: def.description, ref: def.ref, status: def.status, proposed: def.proposed ?? null, perSite: !!def.perSite, default: def.default },
     versions: rows.map(r => ({
       version: r.version, value: r.value, valid: def.schema.safeParse(r.value).success, siteId: r.scopeSiteId, siteCode: r.siteCode,
       decisionRef: r.decisionRef, decisionStatus: r.decisionStatus, reason: r.reason, changedBy: r.by, changedAt: r.createdAt.toISOString(),

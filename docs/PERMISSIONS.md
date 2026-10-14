@@ -47,3 +47,15 @@ SA = Super Admin · AA = Accommodation Admin · Rec = Reception/Officer · Res =
 - Only SA changes a user's site/building scope. Grants and role changes use maker-checker.
 - Separation of duties per DECISIONS.md D-26, enforced in the API.
 - Left staff: login revoked immediately; history visible to authorised staff.
+
+
+## Proposed changes, pending client sign-off (see DECISIONS.md section 15)
+
+These are not part of the approved matrix. The policy table carries the entries so the switch can be turned on without a deployment; each command also checks its setting, so with the setting off the matrix above is exactly what is enforced.
+
+| Row | Role | Proposed addition | Setting | Ships |
+|---|---|---|---|---|
+| Transfers & swaps | Reception | Raise a request on a resident's behalf (still never approve) | `transfers.reception_may_raise` (P-09) | OFF |
+| Keys | Resident | Report an own held key lost | `keys.resident_may_report_lost` (P-05) | OFF |
+| Requests, transfers, extensions | Policy Approver, Backup Approver | Decide once the item reaches the backup level of the approval clock (APPROVALS.md) | `approvals.escalation_backup` (P-01) | ON |
+| Transfers & swaps | Policy Approver | Grant an eligibility exception for one transfer destination | `transfers.exception_path` (P-10) | ON |

@@ -17,8 +17,8 @@ const GROUPS: Record<string, { title: string; subtitle: string }> = {
 }
 
 const show = (v: unknown) => (Array.isArray(v) ? (v.length ? v.join(', ') : 'none') : String(v))
-const statusBadge = (r: Pick<ConfigRow, 'status' | 'ref'>) =>
-  r.status === 'open' ? <Badge tone="warning">Open · {r.ref}</Badge> : r.status === 'default' ? <Badge tone="info">Default · {r.ref}</Badge> : <Badge tone="success">Decided · {r.ref}</Badge>
+const statusBadge = (r: Pick<ConfigRow, 'status' | 'ref'> & { proposed?: string | null }) =>
+  r.proposed ? <Badge tone="warning">Proposed · {r.proposed} · pending client sign-off</Badge> : r.status === 'open' ? <Badge tone="warning">Open · {r.ref}</Badge> : r.status === 'default' ? <Badge tone="info">Default · {r.ref}</Badge> : <Badge tone="success">Decided · {r.ref}</Badge>
 
 function Rows({ rows, canManage, sites }: { rows: ConfigRow[]; canManage: boolean; sites: { id: string; code: string; name: string }[] }) {
   return (

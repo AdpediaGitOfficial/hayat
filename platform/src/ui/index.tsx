@@ -162,6 +162,15 @@ export function Check({ checked, onChange, children }: { checked: boolean; onCha
   return <label className="check"><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />{children}</label>
 }
 
+/** The "confirm with your password" field of high-risk actions (D-03). Send its value as `confirmPassword` in the request body. */
+export function ConfirmPassword({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: string }) {
+  return (
+    <Field label="Confirm with your password" hint="This is a high-risk action, so we ask again who you are." error={error}>
+      <Input type="password" autoComplete="current-password" value={value} onChange={e => onChange(e.target.value)} />
+    </Field>
+  )
+}
+
 /* ---------- Tabs ---------- */
 export function Tabs<T extends string>({ options, value, onChange }: { options: { id: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void }) {
   return (

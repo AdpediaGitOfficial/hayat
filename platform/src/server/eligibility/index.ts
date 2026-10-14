@@ -26,7 +26,7 @@ export async function loadCalendar(q: Reader, siteId?: string): Promise<Calendar
   }
 }
 
-export async function checkEligibility(q: Reader, staffId: string, bedId: string, now: Date, o: { requestId?: string } = {}): Promise<EligibilityCheck | undefined> {
+export async function checkEligibility(q: Reader, staffId: string, bedId: string, now: Date, o: { requestId?: string; transferId?: string } = {}): Promise<EligibilityCheck | undefined> {
   const [row] = await q.select({
     employmentStatus: staffProfile.employmentStatus, gender: staffProfile.gender, grade: staffProfile.grade,
     roomName: room.name, genderPolicy: room.genderPolicy, siteId: bed.siteId, siteName: site.name,
@@ -43,6 +43,7 @@ export async function checkEligibility(q: Reader, staffId: string, bedId: string
     or(isNull(eligibilityException.validUntil), gte(eligibilityException.validUntil, today)),
     or(isNull(eligibilityException.siteId), eq(eligibilityException.siteId, row.siteId)),
     o.requestId ? or(isNull(eligibilityException.requestId), eq(eligibilityException.requestId, o.requestId)) : isNull(eligibilityException.requestId),
+    o.transferId ? or(isNull(eligibilityException.transferRequestId), eq(eligibilityException.transferRequestId, o.transferId)) : isNull(eligibilityException.transferRequestId),
   ))
 
   const result = evaluateEligibility({

@@ -52,6 +52,7 @@ export const handoverEvent = pgTable('handover_event', {
   actorUserId: uuid('actor_user_id'),
   onBehalf: boolean('on_behalf').notNull().default(false),
   note: text('note'),
+  afterHours: boolean('after_hours').notNull().default(false),
   createdAt: createdAt(),
 })
 

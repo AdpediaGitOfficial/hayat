@@ -1382,6 +1382,87 @@ denies access and records the reason.
                                       reactivates a former  reused after review;
                                       employee with the     no duplicate active
                                       same employee ID.     profile is created.
+
+  AT-033            Escalation        Standard request,     Refused before the
+                    backup (P-01)     transfer or           backup level with
+                                      extension reaches     reason and owner;
+                                      the backup level of   allowed from it;
+                                      the approval clock;   initiator and subject
+                                      a Policy Approver     never; audited. Inbox
+                                      decides it. Before    and API agree.
+                                      that level the same
+                                      person tries.
+
+  AT-034            Password re-      Mark as Left,         Nothing changes; clear
+                    confirmation      waiver, rehire,       field error; attempts
+                    (D-03, P-02)      emergency             throttled and counted;
+                                      initiation, role      correct password
+                                      change or queue       proceeds; the list of
+                                      override with a       actions is
+                                      missing or wrong      configurable and
+                                      password; repeated    audited.
+                                      wrong attempts.
+
+  AT-035            Key control       Mark a key lost or    Never marked returned;
+                    (D-73, P-03 to    damaged, try to       replacement retires
+                    P-05)             return it; replace    the old key and links
+                                      it; issue out of      the new; out-of-hours
+                                      hours; resident       flagged (refused only
+                                      reports own key       if enforced); evidence
+                                      lost.                 and resident report
+                                                            only if enabled; every
+                                                            movement in the event
+                                                            log and audit.
+
+  AT-036            Cross-site        Transfer to another   Refused with owner and
+                    transfer          site whose room rule  next action; allowed
+                    eligibility       the person fails;     after a recorded
+                    (D-104, P-09,     with and without a    exception; both sites
+                    P-10)             Policy Approver       approve; the source
+                                      exception; raised by  stays intact on
+                                      Reception.            failure; Reception
+                                                            only if enabled.
+
+  AT-037            Bed readiness     Offer or check in to  Not offered inside the
+                    (AT-021, P-13,    a bed that is not     lead time, not checked
+                    P-14)             ready; bed in         into; only a passed
+                                      Inspection required   final inspection by
+                                      with no cleaning      someone other than the
+                                      record; failed        cleaner makes it
+                                      inspection.           Available; manual task
+                                                            path audited.
+
+  AT-038            Separation of     Every approve,        Refused with the
+                    duties matrix     decide, allocate,     independent-approver
+                    (D-26)            process, inspect,     reason in every
+                                      clean, verify, waive  workflow; audited
+                                      and emergency action  where specified; no
+                                      attempted by the      path lets anyone act
+                                      person it concerns    on their own record.
+                                      or by the person who
+                                      raised it.
+
+  AT-039            Audit             Run each mutating     Each success writes
+                    completeness      workflow once, and a  one audit event with
+                    (D-27, AT-028)    refused one.          actor, role, entity,
+                                                            site, reason and
+                                                            before and after in
+                                                            the same transaction;
+                                                            a refused command
+                                                            leaves none; no API
+                                                            edits or deletes an
+                                                            audit row.
+
+  AT-040            Proposed-policy   Read and change each  Each is listed as
+                    switches          proposed-policy       pending client sign-
+                                      setting.              off with its default;
+                                                            every change is a new
+                                                            audited version; the
+                                                            shipped default
+                                                            reproduces the
+                                                            previous behaviour
+                                                            unless the policy is
+                                                            documented already.
   -------------------------------------------------------------------------------
 
 # 17. Assumptions and Grand Hyatt Sign-off Register
@@ -1501,6 +1582,84 @@ denies access and records the reason.
                                         the primary approver and   confirmation
                                         Super Admin are            required
                                         unavailable.               
+  P-01              Backup approval at  Policy Approver or Backup  PROPOSED, pending
+                    the escalation      Approver decides a         client sign-off
+                    level (S-14)        standard request, transfer
+                                        or extension once it
+                                        reaches the backup level
+                                        (APPROVALS.md). Ships ON.
+
+  P-02              Password re-        D-03 actions enforced at   PROPOSED, pending
+                    confirmation list   the API (emergency         client sign-off
+                    (S-18)              initiation, role change,
+                                        queue override); emergency
+                                        decisions and capability
+                                        grants optional. Ships
+                                        with the D-03 set ON.
+
+  P-03              Key desk office     Hours 08:00 to 20:00 per   PROPOSED, pending
+                    hours (S-19)        site; out-of-hours always  client sign-off
+                                        flagged; enforcement
+                                        (Reception refused out of
+                                        hours) ships OFF.
+
+  P-04              Evidence for a      At least one file          PROPOSED, pending
+                    damaged key (S-19)  required. Ships OFF.       client sign-off
+
+  P-05              Resident reports    Resident may report a held PROPOSED, pending
+                    own key lost        key lost; never mark       client sign-off
+                    (S-19)              returned. Ships OFF.
+
+  P-06              Waiver writes off   A waived lost key is       PROPOSED, pending
+                    a lost key (S-20)   retired, history kept, so  client sign-off
+                                        the stay can close. Ships
+                                        ON (built in Stage 3).
+
+  P-07              Clearance items     Reception completes        PROPOSED, pending
+                    only by owner       Reception items, AA or SA  client sign-off
+                    (S-20)              the AA items, MC the
+                                        Maintenance items. Ships
+                                        OFF.
+
+  P-08              Mark as Left with   Only a Super Admin marks   PROPOSED, pending
+                    no accommodation    Left a person who never    client sign-off
+                    site (S-20)         had a stay, reservation or
+                                        request. Ships OFF.
+
+  P-09              Reception raises    Reception may raise a      PROPOSED, pending
+                    transfers (S-21)    transfer or swap on behalf client sign-off
+                                        of a resident at their
+                                        site; never approve. Ships
+                                        OFF.
+
+  P-10              Exception for a     Policy Approver may grant  PROPOSED, pending
+                    transfer            a recorded gender or grade client sign-off
+                    destination (S-21)  exception for one transfer
+                                        (D-25). Ships ON.
+
+  P-11              Cross-site swap     Name and site of an active PROPOSED, pending
+                    partner by          stay shown to the          client sign-off
+                    employee ID (S-21)  requesting admin. Ships
+                                        OFF.
+
+  P-12              Future bookings     cancel (current) or        PROPOSED, pending
+                    after a cross-site  review. Ships cancel.      client sign-off
+                    move (S-21)
+
+  P-13              Offers on beds      Not offered for a start    PROPOSED, pending
+                    that are not ready  date inside the lead time  client sign-off
+                    (S-22)              (1 day); aligns with
+                                        AT-021 and SPEC-AMENDMENTS
+                                        C-6. Ships ON.
+
+  P-14              Manual cleaning     Reception or Super Admin   PROPOSED, pending
+                    task for a bed      opens a task, with a       client sign-off
+                    with no record      reason, for a bed in Needs
+                    (S-22)              cleaning or Inspection
+                                        required that has none
+                                        (migrated or seeded).
+                                        Ships ON.
+
   -----------------------------------------------------------------------------------
 
 # 18. Implementation Sequence and Release Gates
@@ -1665,6 +1824,30 @@ template:
 -   Every override is permission-checked, reason-required, and logged.
 
 -   Every export is scope-filtered and audited.
+
+# Appendix C --- Amendments of 14 Oct 2026 (hardening round)
+
+This appendix records what changed in the behaviour described above since v1.0, so that the text and the acceptance tests agree with the
+build. `DECISIONS.md` remains the source of truth where the two differ. **Items marked PROPOSED are not approved policy**: each is a
+recommendation implemented behind a setting (System configuration, shown as "Proposed, pending client sign-off") and listed in the
+sign-off register (section 17, P-01 to P-14). Where a proposal ships OFF, the system behaves as before until Grand Hyatt signs it off.
+
+| Section | Change | Status |
+|---|---|---|
+| 5.5 (transfer or swap), 6 | Transfers and swaps may cross sites. The Accommodation Admin of the source site and the one of the destination site both approve; eligibility and readiness are revalidated at the destination; execution is one atomic operation and a failure leaves the resident in place. | DECIDED (D-104; two approvals DEFAULT) |
+| 5.5 | Reception may raise a transfer on a resident's behalf (never approve). | PROPOSED P-09, OFF |
+| 5.5 | A Policy Approver may grant a recorded exception for one transfer destination that fails the gender or grade rule. | PROPOSED P-10, ON |
+| 5.5 | An admin may name a swap partner at another site by employee ID (name and site only). | PROPOSED P-11, OFF |
+| 5.5 step 27 | Stray future bookings after a cross-site move are cancelled, or left for review. | PROPOSED P-12, cancel |
+| 5.3, 8, 21 (approvals) | A Policy Approver or Backup Approver may decide a standard request, transfer or extension once it reaches the backup level of the approval clock; before that, only the Accommodation Admin. | PROPOSED P-01, ON (APPROVALS.md) |
+| 10 (security) | Password re-confirmation (D-03) is enforced for Mark as Left, bulk exit, clearance waiver and rehire in the command, and at the API for emergency initiation, role changes and queue overrides. Emergency decisions and capability grants can be added to the list. | D-03 DEFAULT; extras PROPOSED P-02 |
+| 5.6 (clearance) | A waiver of a lost key retires the key record so the stay can close; history is kept. | PROPOSED P-06, ON |
+| 5.6 | Clearance items may be restricted to their owner. | PROPOSED P-07, OFF |
+| 5.6 | A person who never had a stay, reservation or request at any site can be marked Left only by a Super Admin. | PROPOSED P-08, OFF |
+| 11 (keys) | Key desk office hours (08:00 to 20:00 per site), flagged on every movement, optionally enforced; evidence for a damaged key; a resident may report their own key lost. A lost or damaged key is never marked returned (D-73, DECIDED). | PROPOSED P-03, P-04, P-05, OFF |
+| 12 (readiness) | A bed that is not ready cannot be checked into or offered for a start date inside the lead time (1 day), and becomes Available only through a passed final inspection by someone other than the cleaner (AT-021, DECIDED). A bed with no cleaning record can be given a task by hand. | P-13, P-14 PROPOSED, ON (AT-021, SPEC-AMENDMENTS C-6) |
+| 16 | Acceptance tests AT-033 to AT-040 added. | New |
+
 
 # Approval
 

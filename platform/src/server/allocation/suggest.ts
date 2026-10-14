@@ -11,7 +11,7 @@ export interface BedSuggestion { bedId: string; code: string; roomName: string; 
  * eligible. Ready beds first, then beds that still need cleaning (readiness gates check-in, not the reservation, D-18).
  */
 export async function suggestBeds(q: Pick<Db, 'select'>, o: {
-  staffId: string; siteId: string; from: string; to?: string; limit?: number; excludeBedIds?: string[]; requestId?: string; now: Date
+  staffId: string; siteId: string; from: string; to?: string; limit?: number; excludeBedIds?: string[]; requestId?: string; transferId?: string; now: Date
 }): Promise<BedSuggestion[]> {
   const period = claimPeriod(o.from, o.to)
   const candidates = await q.select({ bedId: bed.id, code: bed.code, roomName: room.name, state: bed.state })
@@ -26,7 +26,7 @@ export async function suggestBeds(q: Pick<Db, 'select'>, o: {
     .limit(60)
   const out: BedSuggestion[] = []
   for (const cand of candidates) {
-    const e = await checkEligibility(q, o.staffId, cand.bedId, o.now, { requestId: o.requestId })
+    const e = await checkEligibility(q, o.staffId, cand.bedId, o.now, { requestId: o.requestId, transferId: o.transferId })
     if (e?.ok) out.push(cand)
     if (out.length >= (o.limit ?? 5)) break
   }

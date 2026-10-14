@@ -17,6 +17,9 @@ import { fail, failure, type Failure, type Result } from '@/server/command/resul
 import type { RequestContext } from '@/server/command/context'
 import { decide, type Action } from '@/server/policy'
 import { getClock } from '@/server/runtime'
+import { confirmPasswordRc } from '@/server/auth/reauth'
+import { getConfig } from '@/server/config/registry'
+import { getDb } from '@/server/db/client'
 
 export type Access =
   | { kind: 'public' }
@@ -32,12 +35,21 @@ export const REGISTERED_ROUTES: RouteMeta[] = []
 
 export interface Reply { cookies: string[] }
 
+export type ReauthAction = 'emergency.initiate' | 'emergency.decide' | 'access.role_change' | 'access.grant' | 'waitlist.queue_override'
+/**
+ * D-03 at the API: when the action is in the configured list (`auth.reauth_actions`, P-02 pending sign-off) the request body must carry
+ * `confirmPassword`, the actor's own password. `when` limits it to the bodies that really are the high-risk case (for example only a
+ * queue override). The field is checked and removed; handlers and body schemas never see it.
+ */
+export interface ReauthRule { action: ReauthAction; when?: (body: any) => boolean }
+
 export interface RouteDef<S extends ZodType | undefined> {
   /** Stable identifier, e.g. 'auth.login'. Shown in logs and used by the contract test. */
   name: string
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   access: Access
   body?: S
+  reauth?: ReauthRule
   handler: (rc: RequestContext, body: S extends ZodType ? z.infer<S> : undefined, req: Request, reply: Reply, ctx: { params: Record<string, string> }) => Promise<Result<unknown>>
 }
 
@@ -126,6 +138,15 @@ export function route<S extends ZodType | undefined = undefined>(def: RouteDef<S
       if (def.body) {
         let raw: unknown
         try { raw = await req.json() } catch { return respond(fail.invalid('The request body must be JSON'), requestId, []) }
+        if (def.reauth && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const { confirmPassword, ...rest } = raw as Record<string, unknown>
+          raw = rest
+          const listed = (await getConfig(getDb(), 'auth.reauth_actions')).includes(def.reauth.action)
+          if (listed && (!def.reauth.when || def.reauth.when(rest))) {
+            const denied = await confirmPasswordRc(rc, typeof confirmPassword === 'string' ? confirmPassword : undefined)
+            if (denied) return respond(denied, requestId, [])
+          }
+        }
         const parsed = def.body.safeParse(raw)
         if (!parsed.success) return respond(fail.invalid('Some fields need attention', fieldsFrom(parsed.error)), requestId, [])
         body = parsed.data

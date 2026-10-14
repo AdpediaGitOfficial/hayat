@@ -122,7 +122,7 @@ export const POLICY = {
       view: { roles: { SA: 'site', AA: 'site', Rec: 'site', Mgr: 'site', Aud: 'site', Res: 'own' } },
       approve: { roles: { SA: 'site', AA: 'site' } },
       execute: { roles: { SA: 'site', AA: 'site', Rec: 'site' } },                   // Rec: approved ones only
-      request: { roles: { Res: 'own' } },
+      request: { roles: { Res: 'own', Rec: 'site' } },                               // Rec: PROPOSED P-09, pending client sign-off; the command also checks the flag
     },
   },
   exit_clearance: {
@@ -143,6 +143,7 @@ export const POLICY = {
       manage: { roles: { SA: 'site', AA: 'site' } },
       issue_return: { roles: { Rec: 'site' } },
       issue_return_night: { roles: {}, caps: { NightKeys: 'site' } },
+      report_own_lost: { roles: { Res: 'own' } },                                    // PROPOSED P-05, pending client sign-off; the command also checks the flag
     },
   },
   housekeeping_readiness: {

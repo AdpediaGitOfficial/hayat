@@ -22,7 +22,7 @@ export default async function ConfigHistoryPage({ params, searchParams }: { para
     <>
       <PageHeader crumbs={['System', 'Configuration']} title={h.row.label} summary={<span className="mono">{h.row.key}</span>}
         actions={<LinkButton href="/config">All settings</LinkButton>} />
-      <Alert tone={h.row.status === 'open' ? 'warning' : 'info'} title={`${h.row.status === 'open' ? 'Open decision' : h.row.status === 'default' ? 'Recommended default' : 'Decided'} · ${h.row.ref}`}
+      <Alert tone={h.row.status === 'open' ? 'warning' : 'info'} title={`${h.row.proposed ? 'Proposed policy, pending client sign-off' : h.row.status === 'open' ? 'Open decision' : h.row.status === 'default' ? 'Recommended default' : 'Decided'} · ${h.row.ref}`}
         detail={`${h.row.description || 'No further description.'} Default value: ${show(h.row.default)}.`} />
       {h.row.perSite && (
         <GlassCard title="Scope" subtitle="This setting can differ by site">

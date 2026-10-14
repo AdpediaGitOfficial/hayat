@@ -11,7 +11,7 @@ import type { Db } from '@/server/db/client'
 export type DecisionStatus = 'decided' | 'default' | 'open'
 
 export interface ConfigDef<T = unknown> {
-  group: 'auth' | 'calendar' | 'timers' | 'import' | 'eligibility' | 'stays' | 'exit' | 'keys' | 'readiness' | 'attachments'
+  group: 'auth' | 'calendar' | 'timers' | 'import' | 'eligibility' | 'stays' | 'exit' | 'keys' | 'readiness' | 'attachments' | 'approvals' | 'transfers' | 'proposals'
   label: string
   description: string
   schema: ZodType<T>
@@ -21,6 +21,8 @@ export interface ConfigDef<T = unknown> {
   status: DecisionStatus
   /** May be overridden per site (otherwise global only). */
   perSite?: boolean
+  /** A newly PROPOSED policy (docs/DECISIONS.md section "Proposed policies"): pending client sign-off, shown as such. Not an approved decision. */
+  proposed?: string
 }
 
 const def = <T>(d: ConfigDef<T>): ConfigDef<T> => d
@@ -102,6 +104,30 @@ export const CONFIG = {
   }),
   'readiness.cleaning_sla_hours': def({ group: 'readiness', label: 'Cleaning not assigned or not done: remind Reception after (hours)', description: '', schema: int(1, 240), default: 24, ref: 'GH-18', status: 'open' }),
   'attachments.max_mb': def({ group: 'attachments', label: 'Largest attachment (MB)', description: 'PNG, JPEG and PDF only.', schema: int(1, 20), default: 5, ref: 'GH-11', status: 'default' }),
+
+  /* ---- Proposed policies, PENDING CLIENT SIGN-OFF (docs/DECISIONS.md "Proposed policies", docs/SPEC-AMENDMENTS.md).
+        Rule for the defaults: a proposal ships ON only where it makes the code match a rule that is already written down
+        (APPROVALS.md, D-03, AT-021); a proposal that gives anyone new authority, new restrictions or shows new data ships OFF
+        (the previous behaviour) with the machinery built and tested both ways. Changing any of these is a versioned, audited change. ---- */
+  'approvals.escalation_backup': def({ group: 'approvals', label: 'Backup approval at the escalation level', description: 'PROPOSED, pending client sign-off (P-01, S-14). A Policy Approver or Backup Approver may decide a standard request, transfer or extension once it has reached the backup level of the approval clock (APPROVALS.md). Before that level, only the Accommodation Admin decides. Off = Accommodation Admin and Super Admin only.', schema: z.boolean(), default: true, ref: 'P-01', status: 'open', proposed: 'P-01' }),
+  'auth.reauth_actions': def({
+    group: 'approvals', label: 'Actions that re-ask for the password', description: 'PROPOSED, pending client sign-off (P-02, S-18). D-03 names Mark as Left, clearance waiver, emergency check-in, overrides and role changes; Mark as Left, bulk exit, waiver and rehire are always enforced in the command. These are enforced at the API for the actions listed here. Defaults: the D-03 ones. Extra proposals (emergency decisions, capability grants) are off.',
+    schema: z.array(z.enum(['emergency.initiate', 'emergency.decide', 'access.role_change', 'access.grant', 'waitlist.queue_override'])).max(10),
+    default: ['emergency.initiate', 'access.role_change', 'waitlist.queue_override'] as ('emergency.initiate' | 'emergency.decide' | 'access.role_change' | 'access.grant' | 'waitlist.queue_override')[],
+    ref: 'P-02', status: 'open', proposed: 'P-02',
+  }),
+  'keys.office_hours': def({ group: 'keys', label: 'Key desk office hours (local time)', description: 'PROPOSED, pending client sign-off (P-03, S-19). Used only when "Enforce office hours" is on. Out-of-hours issues and returns are always flagged in the history.', schema: z.object({ from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }), default: { from: '08:00', to: '20:00' }, ref: 'P-03', status: 'open', proposed: 'P-03', perSite: true }),
+  'keys.enforce_office_hours': def({ group: 'keys', label: 'Enforce key desk office hours', description: 'PROPOSED, pending client sign-off (P-03, S-19). On: outside office hours only Night Keys holders (and admins) issue or return keys; Reception is refused with the reason and the owner. Off: no restriction, out-of-hours movements are only flagged.', schema: z.boolean(), default: false, ref: 'P-03', status: 'open', proposed: 'P-03' }),
+  'keys.damage_evidence_required': def({ group: 'keys', label: 'Evidence required to mark a key damaged', description: 'PROPOSED, pending client sign-off (P-04, S-19). On: at least one photo or file is required.', schema: z.boolean(), default: false, ref: 'P-04', status: 'open', proposed: 'P-04' }),
+  'keys.resident_may_report_lost': def({ group: 'keys', label: 'Residents may report their own key lost', description: 'PROPOSED, pending client sign-off (P-05, S-19). On: a resident can report a key they hold as lost; Reception and the Accommodation Admin are told. They can never mark it returned or found.', schema: z.boolean(), default: false, ref: 'P-05', status: 'open', proposed: 'P-05' }),
+  'clearance.waiver_writes_off_key': def({ group: 'exit', label: 'A waiver of a lost key writes it off', description: 'PROPOSED, pending client sign-off (P-06, S-20). On: the key is retired (history kept) so the stay can close. Off: the key stays Lost and keeps the stay open until Keys & assets resolves it.', schema: z.boolean(), default: true, ref: 'P-06', status: 'open', proposed: 'P-06' }),
+  'clearance.strict_item_owners': def({ group: 'exit', label: 'Clearance items only by their owner', description: 'PROPOSED, pending client sign-off (P-07, S-20). On: Reception completes Reception items, an Accommodation Admin or Super Admin completes Accommodation Admin items, the Maintenance Coordinator completes Maintenance items. Off: Reception may also complete Accommodation Admin items.', schema: z.boolean(), default: false, ref: 'P-07', status: 'open', proposed: 'P-07' }),
+  'exit.sited_only': def({ group: 'exit', label: 'Mark as Left for a person with no accommodation site', description: 'PROPOSED, pending client sign-off (P-08, S-20, S-8). On: only a Super Admin may mark Left a person who has never had a stay, reservation or request at any site. Off: any holder of the action.', schema: z.boolean(), default: false, ref: 'P-08', status: 'open', proposed: 'P-08' }),
+  'transfers.reception_may_raise': def({ group: 'transfers', label: 'Reception may raise transfers and swaps', description: 'PROPOSED, pending client sign-off (P-09, S-21). On: Reception raises a transfer or swap on behalf of a resident at their site. They still never approve. PERMISSIONS.md gives Reception execute only.', schema: z.boolean(), default: false, ref: 'P-09', status: 'open', proposed: 'P-09' }),
+  'transfers.exception_path': def({ group: 'transfers', label: 'Policy Approver exception for a transfer destination', description: 'PROPOSED, pending client sign-off (P-10, S-21). On: when a transfer destination fails the gender or grade rule, a Policy Approver (never the person or the requester) may grant a recorded exception for that transfer, as for a request (D-25).', schema: z.boolean(), default: true, ref: 'P-10', status: 'open', proposed: 'P-10' }),
+  'transfers.swap_partner_lookup': def({ group: 'transfers', label: 'Find a swap partner at another site by employee ID', description: 'PROPOSED, pending client sign-off (P-11, S-21). On: an admin can name the other resident by employee ID for a cross-site swap; only the name and the site are shown, and only for an active stay. Off: the other stay id must come from that site.', schema: z.boolean(), default: false, ref: 'P-11', status: 'open', proposed: 'P-11' }),
+  'transfers.future_bookings': def({ group: 'transfers', label: 'Future bookings after a cross-site move', description: 'PROPOSED, pending client sign-off (P-12, S-21). cancel: stray future reservations are cancelled. review: they are left and the Accommodation Admin is asked to review them.', schema: z.enum(['cancel', 'review']), default: 'cancel', ref: 'P-12', status: 'open', proposed: 'P-12' }),
+  'readiness.offer_lead_days': def({ group: 'readiness', label: 'Offers on beds that are not ready: lead time (days)', description: 'PROPOSED, pending client sign-off (P-13, S-22). A bed that still needs cleaning or inspection cannot be offered for a start date earlier than today plus this many days (AT-021: a bed that is not ready cannot be allocated). 0 = no restriction (previous behaviour).', schema: int(0, 30), default: 1, ref: 'P-13', status: 'open', proposed: 'P-13' }),
 
   /* ---- staff import ---- */
   'import.partial_policy': def({ group: 'import', label: 'CSV import with some invalid rows', description: 'save_valid: confirm saves the valid rows and offers the rejected ones as a file. all_or_nothing: any invalid row blocks the import.', schema: z.enum(['save_valid', 'all_or_nothing']), default: 'save_valid', ref: 'AT-005', status: 'default' }),
