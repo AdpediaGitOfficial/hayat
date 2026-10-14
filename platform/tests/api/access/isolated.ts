@@ -46,6 +46,9 @@ export async function createIsolated(): Promise<Isolated> {
   process.env.DATABASE_URL = appUrl.toString()
 
   const admin = new Pool({ connectionString: ownerUrl, max: 4 })
+  // DROP DATABASE ... WITH (FORCE) terminates every connection to it; a pool or client noticing that is expected, not an error.
+  admin.on('error', () => undefined)
+  server.on('error', () => undefined)
   const hash = await hashPassword(PASSWORD)
   const iso: Isolated = {
     admin,
