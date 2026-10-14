@@ -132,6 +132,19 @@ describe('block and unblock', () => {
     expect(byId.get(future.claimId)).toBe(true)
   })
 
+  it('two admins blocking the same bed at once: exactly one block is recorded, the others get a clean conflict', async () => {
+    const p = await mkProperty()
+    const a1 = await actor('AA', { siteIds: [p.siteId] }), a2 = await actor('MC', { siteIds: [p.siteId] })
+    const rs = await Promise.all([
+      send(block, a1, { id: p.bedIds[0], body: { reason: 'Reason from the admin' } }),
+      send(block, a2, { id: p.bedIds[0], body: { reason: 'Reason from the coordinator' } }),
+      send(block, a1, { id: p.bedIds[0], body: { reason: 'Reason from the admin again' } }),
+    ])
+    expect(rs.map(r => r.status).sort()).toEqual([200, 409, 409])
+    expect(await openBlocks(p.bedIds[0])).toHaveLength(1)
+    expect((await audits(p.bedIds[0])).filter(a => a.action === 'property.bed.blocked')).toHaveLength(1)
+  })
+
   it('unblock: the bed goes to Needs Cleaning (never straight to Available), the block is closed, audit written', async () => {
     const p = await mkProperty()
     const aa = await actor('AA', { siteIds: [p.siteId] })

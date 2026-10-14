@@ -83,6 +83,8 @@ export interface SiteTree {
   directRooms: TreeRoom[]
   /** Counts for the whole site, ignoring the filter, so the chips never change when you filter. */
   counts: StateCounts
+  /** Available beds that already have a dated reservation or hold ahead of them (reservations sit alongside the state, D-17). */
+  availableReserved: number
   /** Today in the site's time zone, 'YYYY-MM-DD'. */
   today: string
   filter: TreeFilter

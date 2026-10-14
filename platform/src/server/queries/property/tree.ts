@@ -1,5 +1,5 @@
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm'
-import { bed, building, room, site } from '@/server/db/schema'
+import { bed, bedClaim, building, room, site } from '@/server/db/schema'
 import { bedBlock } from '@/server/db/schema.property'
 import { getDb } from '@/server/db/client'
 import { scopeFilter, type Actor } from '@/server/policy'
@@ -65,10 +65,12 @@ export async function getSiteTree(actor: Actor, siteId: string, filterIn: TreeFi
   for (const c of claims) claimsBy.set(c.bedId, [...(claimsBy.get(c.bedId) ?? []), c])
 
   /* ---- structure and roll-up counts (ignoring the filter, so the chips stay stable) ---- */
-  const [roomRows, buildingRows, countRows] = await Promise.all([
+  const [roomRows, buildingRows, countRows, reservedRows] = await Promise.all([
     db.select().from(room).where(and(eq(room.siteId, s.id), showArchived ? undefined : isNull(room.archivedAt))),
     db.select().from(building).where(and(eq(building.siteId, s.id), showArchived ? undefined : isNull(building.archivedAt))).orderBy(asc(building.name)),
     db.select({ roomId: bed.roomId, state: bed.state, n: count() }).from(bed).where(and(eq(bed.siteId, s.id), isNull(bed.archivedAt))).groupBy(bed.roomId, bed.state),
+    db.select({ n: sql<number>`count(distinct ${bed.id})::int` }).from(bed).innerJoin(bedClaim, eq(bedClaim.bedId, bed.id))
+      .where(and(eq(bed.siteId, s.id), eq(bed.state, 'available'), isNull(bedClaim.releasedAt), sql`(upper_inf(${bedClaim.period}) OR upper(${bedClaim.period}) > ${today}::date)`)),
   ])
   const roomCounts = new Map<string, StateCounts>()
   const siteCounts = emptyCounts()
@@ -115,6 +117,7 @@ export async function getSiteTree(actor: Actor, siteId: string, filterIn: TreeFi
     buildings,
     directRooms: rooms.filter(r => r.buildingId === null),
     counts: siteCounts,
+    availableReserved: reservedRows[0]?.n ?? 0,
     today,
     filter,
   }

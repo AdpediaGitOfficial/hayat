@@ -21,6 +21,8 @@ export const NAV: readonly NavItem[] = [
   { id: 'home', label: 'Dashboard', href: '/', icon: 'dashboard', group: '' },
 
   // >>> WP-A nav (property and inventory)
+  // Sites & rooms: anyone who may view sites and buildings (SA, AA, Rec, MC, Sec, Mgr, Aud). Residents, technicians and contractors never see it.
+  { id: 'sites', label: 'Sites & rooms', href: '/sites', icon: 'building', group: 'Accommodation', actions: ['sites_buildings.view'] },
   // <<< WP-A nav
 
   // >>> WP-B nav (staff)
