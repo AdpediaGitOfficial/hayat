@@ -281,6 +281,8 @@ Deviations from section 5: claims have a `released_at` (a released claim stays a
 | S-5 | `PERMISSIONS.md` and the prototype differ: the prototype lets AA assign housekeeping and the Policy Approver sign off migration. | Follow the matrix; fix the prototype or the matrix. |
 | S-6 | Building-level scope exists in `role_assignment` but not in the actor/resource types. | Add in Stage 1. |
 | S-7 | Next.js 14.2.35 has open advisories (1 critical, 4 high) fixed only in later majors; D-101 pins 14. | Revisit before the Stage 6 penetration test; the image optimiser is already disabled. |
+| S-8 | `staff_profile` has no site column, so a site-scoped `staff_directory` grant cannot be narrowed by site. Stage 1 treats the directory as organisation-wide for any actor holding the action; the real controls are the role-shaped minimum data and Resident-own-only. | Product owner to confirm, or say how AA/Reception scope should apply (for example by current stay site). |
+| S-9 | WP-B open questions: may an archived profile's employee ID be reused; how long may `import_row` personal data be kept (no deletion exists); confirm `import.partial_policy` = `save_valid`; is Grade a number or designation text. | Product owner; defaults in force: no reuse, indefinite retention, save_valid, number. |
 
 Also noted for the commands: take a row lock on the bed first so a lost race always returns the clean "bed taken" error (a deadlock code is also possible and both must map to it); expired sessions need a retention job under a different role; no-self-approval and bed-state-agrees-with-claims stay in the application, not the database.
 
