@@ -149,7 +149,7 @@ export async function busyResident(w: World) {
     `INSERT INTO accommodation_request (staff_id, site_id, arrival_date, end_date, stay_type, status) VALUES ($1, $2, '2026-12-01', '2027-01-01', 'contract', 'pending_approval') RETURNING id`,
     [r.staffId, w.siteId])).rows[0].id
   const transfer = (await admin().query<{ id: string }>(
-    `INSERT INTO transfer_request (kind, site_id, stay_id, staff_id, from_bed_id, to_bed_id, reason, status) VALUES ('transfer', $1, $2, $3, $4, $5, 'Closer to work', 'requested') RETURNING id`,
+    `INSERT INTO transfer_request (kind, site_id, destination_site_id, stay_id, staff_id, from_bed_id, to_bed_id, reason, status) VALUES ('transfer', $1, $1, $2, $3, $4, $5, 'Closer to work', 'requested') RETURNING id`,
     [w.siteId, r.stayId, r.staffId, w.bedIds[0], w.bedIds[3]])).rows[0].id
   const ext = (await admin().query<{ id: string }>(
     `INSERT INTO extension_request (site_id, stay_id, staff_id, current_end, new_end, added_days, status) VALUES ($1, $2, $3, '2026-12-01', '2026-12-31', 30, 'requested') RETURNING id`,
