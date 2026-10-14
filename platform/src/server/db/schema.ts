@@ -9,7 +9,7 @@ import { TABLES_STAFF } from './schema.staff'
 import { TABLES_ACCESS } from './schema.access'
 import { TABLES_ALLOC } from './schema.alloc'
 import { TABLES_REQUESTS } from './schema.requests'
-import { TABLES_WAITLIST } from './schema.waitlist'
+import { TABLES_WAITLIST, waitlistEntry, bedOffer } from './schema.waitlist'
 import { TABLES_STAYS } from './schema.stays'
 import { TABLES_EMERGENCY } from './schema.emergency'
 import type {
@@ -263,39 +263,8 @@ export const stay = pgTable('stay', {
   updatedAt: updatedAt(),
 })
 
-export const waitlistEntry = pgTable('waitlist_entry', {
-  id: id(),
-  staffId: uuid('staff_id').notNull().references(() => staffProfile.id),
-  siteId: uuid('site_id').notNull().references(() => site.id),
-  requestId: uuid('request_id').references(() => accommodationRequest.id),
-  priority: text('priority'),
-  queueTs: tz('queue_ts').notNull().defaultNow(),
-  expiresAt: tz('expires_at').notNull(),
-  declines: integer('declines').notNull().default(0),
-  skipBedIds: uuid('skip_bed_ids').array().notNull().default([]),
-  remindersSent: integer('reminders_sent').array().notNull().default([]),
-  status: text('status').$type<WaitlistStatus>().notNull().default('waiting'),
-  closeReason: text('close_reason'),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-})
-
-export const bedOffer = pgTable('bed_offer', {
-  id: id(),
-  staffId: uuid('staff_id').notNull().references(() => staffProfile.id),
-  waitlistEntryId: uuid('waitlist_entry_id').references(() => waitlistEntry.id),
-  bedId: uuid('bed_id').notNull(),
-  claimId: uuid('claim_id').notNull().unique(),
-  status: text('status').$type<OfferStatus>().notNull().default('pending'),
-  deliveredAt: tz('delivered_at'),
-  deliveredVia: text('delivered_via').$type<'viewed' | 'email' | 'offline'>(),
-  expiresAt: tz('expires_at'),
-  followUpSentAt: tz('follow_up_sent_at'),
-  acceptedBy: uuid('accepted_by').references(() => userAccount.id),
-  acceptedOnBehalf: boolean('accepted_on_behalf').notNull().default(false),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-})
+/* waitlist_entry and bed_offer are described in schema.waitlist.ts (all columns, after migration 0060). */
+export { waitlistEntry, bedOffer }
 
 export const loginAttempt = pgTable('login_attempt', {
   id: id(),

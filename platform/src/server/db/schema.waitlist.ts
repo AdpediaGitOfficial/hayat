@@ -1,10 +1,7 @@
 /**
- * Tables owned by WP-E (waitlist and bed offers, migration 0060).
- *
- * waitlist_entry and bed_offer exist since Stage 0 (schema.ts) and gained columns in 0060. They are described again
- * here with ALL their columns and registered under the same keys, which replace the Stage 0 descriptions in TABLES
- * (the later spread wins). Code in this package imports them from here. Foreign keys live in the migration; plain
- * uuid columns avoid a circular import with ./schema.
+ * Tables owned by WP-E (waitlist and bed offers, migration 0060). waitlist_entry and bed_offer exist since Stage 0 and
+ * gained columns in 0060; this is their full description, re-exported by schema.ts. Foreign keys live in the migration;
+ * plain uuid columns avoid a circular import with ./schema.
  */
 import { boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import type { OfferStatus, StayTypeDb, WaitlistStatus } from '@/domain/enums'
@@ -83,9 +80,7 @@ export const waitlistPriorityRequest = pgTable('waitlist_priority_request', {
   updatedAt: updatedAt(),
 })
 
-/** Registered in TABLES (schema.ts) under their own keys. Table and column names are what schema-sync compares, and this description (all columns) wins over the Stage 0 one for the same table name. On merge the Stage 0 definitions in schema.ts can be replaced by re-exports of these. */
+/** waitlist_entry and bed_offer are registered by schema.ts (they exist since Stage 0); this registers the new tables. */
 export const TABLES_WAITLIST = {
-  waitlist_entry_wp_e: waitlistEntry,
-  bed_offer_wp_e: bedOffer,
   waitlist_priority_request: waitlistPriorityRequest,
 } as const
