@@ -30,6 +30,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-E nav
 
   // >>> WP-F nav (stays, check-in, transfers)
+  { id: 'stays', label: 'Stays & check-in', href: '/stays', icon: 'login', group: 'Accommodation', actions: ['checkin_checkout.view'] },
+  // Transfers and swaps are reached from the Stays page (a second entry here would highlight both, the shell matches by path prefix).
   // <<< WP-F nav
 
   // >>> WP-G nav (emergency check-in)

@@ -1,0 +1,91 @@
+'use client'
+/** What can be done to one transfer or swap request, by whoever may do it. Every refusal comes back with reason, owner and next action. */
+import { useState } from 'react'
+import { Alert, Blocked, Button, Field, Select, Textarea } from '@/ui'
+import type { TransferListRow } from '@/server/queries/stays/transfers'
+import { Problem, useCall } from './call'
+
+export function TransferActions({ t }: { t: TransferListRow }) {
+  const { run, busy, err } = useCall()
+  const [dest, setDest] = useState(t.toBedId ?? '')
+  const [rejecting, setRejecting] = useState(false)
+  const [declining, setDeclining] = useState(false)
+  const [reason, setReason] = useState('')
+  const [via, setVia] = useState<'in_person' | 'phone' | 'written'>('in_person')
+  const base = `/api/v1/stays/transfers/${t.id}`
+  const open = t.status === 'requested' || t.status === 'failed'
+  const needsDest = t.kind === 'transfer' && open
+  const missing = t.consent ? [!t.consent.a && t.name, !t.consent.b && t.otherName].filter(Boolean) as string[] : []
+
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      {err && <Problem f={err} />}
+
+      {t.kind === 'swap' && t.status === 'requested' && missing.length > 0 && (
+        <Blocked why={`Waiting for ${missing.join(' and ')} to agree to the swap`} owner="The resident, or the Accommodation Admin recording it" next="The resident confirms in the app, or record how they agreed (in person, by phone, in writing)" />
+      )}
+      {t.viewerParty && t.status === 'requested' && !(t.viewerParty === 'a' ? t.consent?.a : t.consent?.b) && (
+        <div className="stack" style={{ gap: 8 }}>
+          <Alert tone="info" title="Someone proposed a bed swap with you" detail="You only move if you agree. If the swap cannot be carried out you stay where you are." />
+          {!declining
+            ? <div className="row wrap"><Button variant="primary" size="sm" disabled={busy} onClick={() => run(`${base}/consent`, {})}>I agree to this swap</Button><Button size="sm" onClick={() => setDeclining(true)}>I do not agree</Button></div>
+            : <>
+              <Field label="Why not?" error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>
+              <div className="row wrap"><Button variant="danger" size="sm" disabled={busy || reason.trim().length < 3} onClick={() => run(`${base}/reject`, { reason })}>Decline the swap</Button><Button variant="ghost" size="sm" onClick={() => setDeclining(false)}>Back</Button></div>
+            </>}
+        </div>
+      )}
+      {t.can.consent && !t.viewerParty && missing.length > 0 && (
+        <div className="row wrap">
+          <Select aria-label="How they agreed" value={via} onChange={e => setVia(e.target.value as typeof via)} style={{ maxWidth: 180 }}>
+            <option value="in_person">In person</option><option value="phone">By phone</option><option value="written">In writing</option>
+          </Select>
+          {!t.consent!.a && <Button size="sm" disabled={busy} onClick={() => run(`${base}/consent`, { party: 'a', via })}>Record consent: {t.name}</Button>}
+          {!t.consent!.b && <Button size="sm" disabled={busy} onClick={() => run(`${base}/consent`, { party: 'b', via })}>Record consent: {t.otherName}</Button>}
+        </div>
+      )}
+
+      {t.can.approve && open && !rejecting && (
+        <>
+          {needsDest && (
+            <Field label="Destination bed" hint={t.suggestions.length ? 'Beds that are ready now and free for the whole stay.' : 'No ready bed is free for the whole stay right now.'}>
+              <Select value={dest} onChange={e => setDest(e.target.value)}>
+                <option value="">Choose a bed</option>
+                {t.toBedId && !t.suggestions.some(s => s.bedId === t.toBedId) && t.status !== 'failed' && <option value={t.toBedId}>{t.toBedLabel ?? 'Requested bed'}</option>}
+                {t.suggestions.map(s => <option key={s.bedId} value={s.bedId}>{s.roomName} · {s.code}</option>)}
+              </Select>
+            </Field>
+          )}
+          <div className="row wrap">
+            <Button variant="primary" size="sm" disabled={busy || (needsDest && !dest) || missing.length > 0} onClick={() => run(`${base}/approve`, { destinationBedId: needsDest ? dest || null : null })}>
+              {t.status === 'failed' ? 'Approve with this bed' : `Approve ${t.kind}`}
+            </Button>
+            <Button size="sm" onClick={() => setRejecting(true)}>Reject</Button>
+          </div>
+        </>
+      )}
+      {t.can.approve && open && rejecting && (
+        <>
+          <Field label="Reason for rejecting" error={err?.fields?.reason}><Textarea value={reason} onChange={e => setReason(e.target.value)} /></Field>
+          <div className="row wrap">
+            <Button variant="danger" size="sm" disabled={busy || reason.trim().length < 3} onClick={() => run(`${base}/reject`, { reason })}>Reject {t.kind}</Button>
+            <Button variant="ghost" size="sm" onClick={() => setRejecting(false)}>Back</Button>
+          </div>
+        </>
+      )}
+      {!t.can.approve && t.status === 'requested' && <Alert tone="info" title="Waiting for approval" detail="An Accommodation Admin who is not part of this request decides it. If you raised it, you cannot approve it (separation of duties)." />}
+
+      {t.can.execute && (
+        <div className="row wrap">
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => run(`${base}/execute`, {})}>Carry out {t.kind === 'swap' ? 'swap' : 'move'} now</Button>
+          <span className="muted body-sm">Keys are returned and issued at Reception; the old bed then needs cleaning.</span>
+        </div>
+      )}
+      {t.status === 'approved' && !t.can.execute && <Alert tone="info" title="Approved: waiting for Reception" detail="Reception carries it out when the resident is ready." />}
+
+      {t.can.cancel && (
+        <div><Button variant="ghost" size="sm" disabled={busy} onClick={() => run('/api/v1/stays/requests/cancel', { kind: 'transfer', id: t.id })}>Withdraw request</Button></div>
+      )}
+    </div>
+  )
+}

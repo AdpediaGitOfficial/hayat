@@ -10,6 +10,7 @@ import '../../approvals/sweep'
 // <<< WP-E sweeps
 
 // >>> WP-F sweeps (no-show, end-date, overdue)
+import './stays'
 // <<< WP-F sweeps
 
 // >>> WP-G sweeps (emergency)
