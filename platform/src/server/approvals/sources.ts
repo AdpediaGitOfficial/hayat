@@ -12,6 +12,7 @@
 // <<< WP-F approval sources
 
 // >>> WP-G approval sources (emergency)
+import '@/server/queries/emergency/approvalSource'
 // <<< WP-G approval sources
 
 export {}

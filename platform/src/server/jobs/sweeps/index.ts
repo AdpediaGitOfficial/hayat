@@ -13,4 +13,5 @@ import '../../approvals/sweep'
 // <<< WP-F sweeps
 
 // >>> WP-G sweeps (emergency)
+import './emergency'
 // <<< WP-G sweeps

@@ -33,6 +33,8 @@ export const NAV: readonly NavItem[] = [
   // <<< WP-F nav
 
   // >>> WP-G nav (emergency check-in)
+  // Initiators (Emergency Check-in holders), approvers (AA, Backup and Policy Approvers) and viewers (SA, AA, Auditor).
+  { id: 'emergency', label: 'Emergency check-in', href: '/emergency', icon: 'siren', group: 'Accommodation', actions: ['emergency_checkin.initiate', 'emergency_checkin.approve', 'emergency_checkin.view'] },
   // <<< WP-G nav
 
   // >>> WP-A nav (property and inventory)
