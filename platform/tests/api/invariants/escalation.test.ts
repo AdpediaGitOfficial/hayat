@@ -29,7 +29,7 @@ import { approveTransfer, rejectTransfer } from '@/server/commands/stays/decideT
 import { requestSwap, requestTransfer } from '@/server/commands/stays/requestTransfer'
 import { approveExtension, rejectExtension, requestExtension } from '@/server/commands/stays/extension'
 import { initiateEmergency } from '@/server/commands/emergency/initiate'
-import { approveEmergency, rejectEmergency } from '@/server/commands/emergency/decide'
+import { approveEmergency } from '@/server/commands/emergency/decide'
 import { addToWaitlist } from '@/server/commands/waitlist/add'
 import { decidePriority, requestPriority } from '@/server/commands/waitlist/priority'
 import { POST as approveRoute } from '../../../app/api/v1/requests/[id]/approve/route'

@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createIsolated } from '../access/isolated'
-import { invKit, T0, day, type Cast } from './kit'
+import { invKit, day, type Cast } from './kit'
 import type { Result } from '@/server/command/result'
 import type { RequestContext } from '@/server/command/context'
 import { approveRequest } from '@/server/commands/requests/approve'
@@ -164,4 +164,3 @@ describe('AT-039 the audit event and the change commit or roll back together', (
   })
 })
 
-void T0

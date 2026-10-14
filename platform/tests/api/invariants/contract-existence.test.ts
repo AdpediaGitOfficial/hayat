@@ -9,7 +9,7 @@
  * The routes that take an id are called with a REAL record of a site the probe people have no part in, and with a random id.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { call, closeAll, makeUser, signIn, grantCapability } from '../harness'
+import { call, closeAll, makeUser, signIn } from '../harness'
 import { ROLES, type Role } from '@/domain/enums'
 import { decide, type Action } from '@/server/policy'
 import { buildActor } from '@/server/auth/actor'
@@ -21,8 +21,6 @@ import * as XT from '../exit/helpers'
 import * as KY from '../keys/helpers'
 import * as RD from '../readiness/helpers'
 import * as WL from '../waitlist/helpers'
-import * as FX from '../fixtures3'
-import { admin } from '../harness'
 import { approveRequest } from '@/server/commands/requests/approve'
 import { requestTransfer } from '@/server/commands/stays/requestTransfer'
 import { requestExtension } from '@/server/commands/stays/extension'
@@ -199,7 +197,6 @@ const FAMILIES: { name: string; match: RegExp; make: () => Promise<Family> }[] =
     const maker = await makeUser({ roles: [{ role: 'SA', all: true }] })
     const g = await requestGrant(rcFor(maker.id, { role: 'SA', sites: 'all', staffId: maker.staffId }), { userId: target.id, capability: 'NightKeys', reason: 'Night cover' })
     if (!g.ok) throw new Error(g.reason)
-    void grantCapability; void admin; void FX
     return { ids: { id: g.data.grantId }, bodies: { decide: { decision: 'reject', note: 'No' }, revoke: { reason: 'No longer needed' } } }
   } },
 ]

@@ -14,8 +14,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest'
 import { admin, closeAll, PASSWORD } from '../harness'
-import { day as day2, mkRequest, mkStaff } from '../fixtures3'
-import { mkItem, mkStayFor } from '../fixtures3'
+import { mkRequest, mkStaff } from '../fixtures3'
 import * as RQ from '../requests/helpers'
 import * as ST from '../stays/helpers'
 import * as EM from '../emergency/helpers'
@@ -84,11 +83,10 @@ interface Arr {
 const q = async (sql: string, args: unknown[] = []) => (await admin().query(sql, args)).rows
 const fp = async (...qs: [string, unknown[]][]) => JSON.stringify(await Promise.all(qs.map(([s, a]) => q(s, a))))
 const auditRows = async (ids: string[]) => ids.length ? (await q(`SELECT seq, action FROM audit_event WHERE entity_id = ANY($1::uuid[]) ORDER BY seq`, [ids])) as { seq: string; action: string }[] : []
-const sodOf = (r: Result<unknown>): Result<unknown> => r
 
 /* ---------------- requests and allocation ---------------- */
 
-async function requestScene(o: { status?: string } = {}) {
+async function requestScene() {
   const s = await RQ.scenario({ beds: 4 })
   const subject = await RQ.who('AA', { siteIds: [s.siteId] })
   const raiser = await RQ.who('AA', { siteIds: [s.siteId] })
@@ -100,7 +98,6 @@ async function requestScene(o: { status?: string } = {}) {
     [`SELECT id, status FROM reservation WHERE request_id = $1`, [requestId]],
     [`SELECT bed_id, released_at FROM bed_claim WHERE bed_id = ANY($1::uuid[]) ORDER BY id`, [s.bedIds]],
   )
-  void o
   return { s, subject, raiser, independent, requestId, fingerprint }
 }
 
@@ -645,4 +642,3 @@ describe.each(TABLE)('AT-038 %s', (_group, rows) => {
   })
 })
 
-void [day2, sodOf, mkItem, mkStayFor, addToWaitlist, ST.NOW]

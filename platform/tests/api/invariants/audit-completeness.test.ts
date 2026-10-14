@@ -13,7 +13,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { admin, closeAll, makeUser, PASSWORD, grantCapability } from '../harness'
-import { getDb, getPool } from '@/server/db/client'
+import { getPool } from '@/server/db/client'
 import { PNG, mkStaff } from '../fixtures3'
 import * as RQ from '../requests/helpers'
 import * as ST from '../stays/helpers'
@@ -52,7 +52,7 @@ import { resetPassword } from '@/server/commands/access/reset-password'
 import { revokeUserSessions } from '@/server/commands/access/revoke-sessions'
 import { setConfig } from '@/server/commands/access/set-config'
 import { submitRequest } from '@/server/commands/requests/submit'
-import { editRequest, resubmitRequest } from '@/server/commands/requests/edit'
+import { editRequest } from '@/server/commands/requests/edit'
 import { cancelRequest as cancelBedRequest } from '@/server/commands/requests/cancel'
 import { approveRequest } from '@/server/commands/requests/approve'
 import { rejectRequest, requestChanges } from '@/server/commands/requests/decide'
@@ -316,10 +316,9 @@ row('attachments', 'attach a file to a key', async () => {
 
 /* ---------------- requests, allocation, waitlist ---------------- */
 
-async function oneRequest(o: { status?: string } = {}) {
+async function oneRequest() {
   const s = await RQ.scenario({ beds: 3 })
   const bedId = s.bedIds[0]
-  void o
   return { ...s, bedId }
 }
 row('requests', 'file a request on someone\'s behalf', async () => {
@@ -349,8 +348,6 @@ row('requests', 'edit a request that was sent back', async () => {
   const s = await oneRequest()
   const back = await requestChanges(s.aa.rc, { requestId: s.requestId, reason: 'Please give an end date' })
   if (!back.ok) throw new Error(back.reason)
-  const owner = await q(`SELECT u.id, u.staff_id FROM user_account u WHERE u.staff_id = $1`, [s.person.id])
-  void owner
   // the person has no login in this scenario: the officer who files for them edits
   const rec = await RQ.who('Rec', { siteIds: [s.siteId] })
   await q(`UPDATE accommodation_request SET submitted_by = $2, on_behalf = true WHERE id = $1`, [s.requestId, rec.user.id])
@@ -639,8 +636,6 @@ row('exit', 'close a clearance case', async () => {
     const d = await completeItem(rc, { itemId: i.id, note: 'done' })
     if (!d.ok && d.code !== 'conflict') throw new Error(d.reason)
   }
-  const out = await XT.world()
-  void out
   return { by: t.w.aa.rc(), refusedBy: await nobody(), act: rc => closeCase(rc, { caseId: t.caseId }), ev: [{ a: 'exit.clearance.cleared', t: 'clearance_case', id: t.caseId, site: t.w.siteId, before: true, after: true }],
     watch: [[`SELECT status FROM clearance_case WHERE id = $1`, [t.caseId]]], moreEvents: true }
 })
@@ -996,7 +991,6 @@ describe('AT-039 the audit log cannot be edited or deleted', () => {
     const priv = (await pool.query<{ p: string; ok: boolean }>(
       `SELECT p, has_table_privilege(current_user, 'audit_event', p) AS ok FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) AS p`)).rows
     expect(Object.fromEntries(priv.map(r => [r.p, r.ok]))).toMatchObject({ SELECT: true, INSERT: true, UPDATE: false, DELETE: false, TRUNCATE: false })
-    void getDb
   })
 
   it('even the table owner cannot rewrite history: a trigger refuses UPDATE and DELETE', async () => {
