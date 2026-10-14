@@ -12,6 +12,9 @@ const kind = uniq('t_inbox')
 let drafts: ApprovalDraft[] = []
 registerApprovalSource({ kind, listPending: async () => drafts.filter(d => d.kind === kind) })
 
+// Other packages register real sources and leave pending items in the shared database: look only at this test's own kind.
+const inbox = (a: any, now: Date) => listInbox(getDb(), a, now).then(r => r.filter(i => i.kind === kind))
+
 const H = 3600_000, D = 24 * H
 const deciders = [
   { level: 0 as const, label: 'Accommodation Admin', action: 'requests_waitlist.approve' as const, notify: 'AA' as const },
@@ -28,17 +31,18 @@ describe('approvals inbox', () => {
     const [a, b] = [await newSite(), await newSite()]
     drafts = [draft({ siteId: a, ref: 'r-a' }), draft({ siteId: b, ref: 'r-b' })]
     const now = new Date(Date.UTC(2026, 9, 12, 10))
-    expect((await listInbox(getDb(), actor('AA', [a]), now)).map(i => i.ref)).toEqual(['r-a'])
-    expect((await listInbox(getDb(), actor('SA', 'all'), now)).map(i => i.ref).sort()).toEqual(['r-a', 'r-b'])
-    expect(await listInbox(getDb(), actor('Rec', [a]), now)).toEqual([])
-    expect(await listInbox(getDb(), actor('Res', []), now)).toEqual([])
+    const mine = (a: any) => inbox(a, now)
+    expect((await mine(actor('AA', [a]))).map(i => i.ref)).toEqual(['r-a'])
+    expect((await mine(actor('SA', 'all'))).map(i => i.ref).sort()).toEqual(['r-a', 'r-b'])
+    expect(await mine(actor('Rec', [a]))).toEqual([])
+    expect(await mine(actor('Res', []))).toEqual([])
     void actorOf
   })
 
   it('"why you can\'t approve": the subject and the one who raised it are blocked (D-26)', async () => {
     const site = await newSite()
     drafts = [draft({ siteId: site, ref: 'self', subjectStaffIds: ['me'] }), draft({ siteId: site, ref: 'raised', raisedByStaffId: 'me' }), draft({ siteId: site, ref: 'other' })]
-    const items = await listInbox(getDb(), actor('AA', [site], 'me'), new Date(Date.UTC(2026, 9, 12, 10)))
+    const items = await inbox(actor('AA', [site], 'me'), new Date(Date.UTC(2026, 9, 12, 10)))
     const by = Object.fromEntries(items.map(i => [i.ref, i]))
     expect(by.self.mine).toBe(false)
     expect(by.self.why).toMatch(/separation of duties/)
@@ -52,11 +56,11 @@ describe('approvals inbox', () => {
     drafts = [draft({ siteId: site, ref: 'x', createdAt: Date.UTC(2026, 9, 12, 9) })]
     const pa = actor('AA', [site], 'pa', ['PolicyApprover'])
     const onlyPa = { ...pa, role: 'Mgr' } // holds PolicyApprover, not the AA role
-    const early = await listInbox(getDb(), onlyPa, new Date(Date.UTC(2026, 9, 12, 10)))
+    const early = await inbox(onlyPa, new Date(Date.UTC(2026, 9, 12, 10)))
     expect(early).toHaveLength(1)
     expect(early[0].mine).toBe(false)
     expect(early[0].why).toMatch(/Waiting for Accommodation Admin/)
-    const late = await listInbox(getDb(), onlyPa, new Date(Date.UTC(2026, 9, 14, 10))) // 2 business days
+    const late = await inbox(onlyPa, new Date(Date.UTC(2026, 9, 14, 10))) // 2 business days
     expect(late[0].clock.level).toBe(1)
     expect(late[0].mine).toBe(true)
     expect(late[0].current).toBe('Policy Approver')
@@ -69,7 +73,7 @@ describe('approvals inbox', () => {
       draft({ siteId: site, ref: 'new', createdAt: Date.UTC(2026, 9, 14, 8) }),
       draft({ siteId: site, ref: 'urgent', createdAt: Date.UTC(2026, 9, 14, 9), urgent: true }),
     ]
-    const items = await listInbox(getDb(), actor('SA', 'all'), new Date(Date.UTC(2026, 9, 14, 10)))
+    const items = await inbox(actor('SA', 'all'), new Date(Date.UTC(2026, 9, 14, 10)))
     expect(items.filter(i => ['old', 'new', 'urgent'].includes(i.ref)).map(i => i.ref)).toEqual(['urgent', 'old', 'new'])
   })
 
@@ -77,7 +81,7 @@ describe('approvals inbox', () => {
     const site = await newSite()
     drafts = [draft({ siteId: site, ref: 'z', createdAt: Date.UTC(2026, 8, 1) })]
     const before = JSON.stringify(drafts)
-    await listInbox(getDb(), actor('SA', 'all'), new Date(Date.UTC(2026, 9, 20)))
+    await inbox(actor('SA', 'all'), new Date(Date.UTC(2026, 9, 20)))
     expect(JSON.stringify(drafts)).toBe(before)
     void makeUser; void grantCapability; void D
   })
