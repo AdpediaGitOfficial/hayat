@@ -187,7 +187,8 @@ Full table: `APPROVALS.md`.
 | D-98 | Prototype covers: role-based dashboards; staff onboarding + CSV import; bed inventory + allocation; waitlist + offer acceptance; check-in, transfer, checkout; clearance + housekeeping; emergency approval + escalation. | DECIDED |
 | D-99 | Recommendation: Figma for screens; a small **coded** prototype (dummy data, real state changes) for the flows Figma can't fake: allocation with conflict, waitlist offer/decline timers, emergency escalation. | DEFAULT |
 | D-100 | A clickable prototype is a demo: no production database, auth enforcement or real notifications. | DECIDED |
-| D-101 | **Web stack: Next.js (App Router) + React + TypeScript.** The clickable prototype is built on it and the production web app continues on the same stack, so screens, components and domain rules carry over. Server-side permission checks, auth and APIs (Stage 1) will live in Next.js route handlers or server actions. Switched from Vite + React on 14 Oct 2026. Backend, database and hosting choices are not decided here and remain for Stage 1. | DECIDED |
+| D-101 | **Web stack: Next.js (App Router) + React + TypeScript.** The clickable prototype is built on it and the production web app continues on the same stack, so screens, components and domain rules carry over. Server-side permission checks, auth and APIs (Stage 1) will live in Next.js route handlers or server actions. Switched from Vite + React on 14 Oct 2026. Database is decided in D-102; backend hosting remains for Stage 1. | DECIDED |
+| D-102 | **Database: PostgreSQL.** Chosen so the "no double allocation" rule is enforced by a database constraint, with real transactions and row locks. Hosting, authentication library, job queue and email provider are not decided by this item (see `PLAN.md` T-2 to T-10). Decided 14 Oct 2026. | DECIDED |
 
 ---
 

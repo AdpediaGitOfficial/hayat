@@ -39,7 +39,7 @@ Recommendation first, then the alternative and what it costs.
 
 | # | Decision | Recommendation | Why | Alternative and cost |
 |---|---|---|---|---|
-| **T-1** | **Database** | **PostgreSQL 16** | Range-exclusion constraints give a hard guarantee of no double allocation. Real transactions and row locks. Row-level security available as a second line of defence. Mature backup and recovery. Fits Next.js (D-101). | **Firestore** (assumed by the HTML prototype): no range constraint, so the overlap rule would rest only on application transactions. Transaction size and contention limits for bulk allocation. Reporting and CSV exports need extra pipelines. Ties the client to one cloud vendor. |
+| **T-1** | **Database** (**decided: D-102**) | **PostgreSQL 16** | Range-exclusion constraints give a hard guarantee of no double allocation. Real transactions and row locks. Row-level security available as a second line of defence. Mature backup and recovery. Fits Next.js (D-101). | **Firestore** (assumed by the HTML prototype): no range constraint, so the overlap rule would rest only on application transactions. Transaction size and contention limits for bulk allocation. Reporting and CSV exports need extra pipelines. Ties the client to one cloud vendor. |
 | T-2 | Hosting | Containers, cloud-neutral. Region and provider chosen with Grand Hyatt IT. | Hosting is not decided (NFR-10, GH-14). A container image runs anywhere. | A managed platform is faster to start but can lock in choices GH IT may reject. |
 | T-3 | Authentication | Username + password, **Argon2id** hashing, **database sessions**, forced change at first login, lockout, admin-assisted reset (D-02, D-07, D-08). Build on Auth.js credentials or a small in-house module over the sessions table. | Immediate revocation is a hard requirement. | Stateless JWT cannot be revoked instantly. |
 | T-4 | Data access | **Drizzle ORM** plus hand-written SQL migrations | Exclusion constraints and triggers must be raw SQL anyway; Drizzle stays out of the way. | Prisma is fine for CRUD but hides these constructs. |
@@ -309,7 +309,7 @@ Unanswered items are built behind configuration or a clearly marked placeholder,
 
 ## 17. What happens next
 
-1. You confirm or change the technical decisions in section 3, above all **T-1 (PostgreSQL)**.
+1. You confirm or change the remaining technical decisions in section 3. **T-1 (PostgreSQL) is decided (D-102).**
 2. I run **Stage 0**: scaffold the production app, CI, container setup and schema v0 with the overlap constraint and its tests, and port the domain rules.
 3. In parallel I work down the **prototype hardening list** (section 12), starting with P-3, P-1, P-2 and P-13.
 4. Grand Hyatt receives the blocker and gap question list (`GAP-ANALYSIS.md` section 6).
