@@ -133,7 +133,7 @@ describe('submitting a request', () => {
     expect(r4.ok).toBe(false)
     if (!r4.ok) expect((r4.detail as any).reason).toBe('has_reservation')
     const queued = await mkStaff()
-    await admin().query(`INSERT INTO waitlist_entry (staff_id, site_id, expires_at) VALUES ($1, $2, now() + interval '15 days')`, [queued.id, p.siteId])
+    await admin().query(`INSERT INTO waitlist_entry (staff_id, site_id, arrival_date, stay_type, expires_at) VALUES ($1, $2, current_date + 10, 'contract', now() + interval '15 days')`, [queued.id, p.siteId])
     const r5 = await submitRequest(aa.rc, base(p.siteId, { staffId: queued.id }))
     expect(r5.ok).toBe(false)
     if (!r5.ok) expect((r5.detail as any).reason).toBe('on_waitlist')

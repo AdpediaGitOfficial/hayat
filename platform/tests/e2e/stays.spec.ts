@@ -73,8 +73,8 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
     await reserve(bed.A, s1, iso(0), iso(20))
     await reserve(bed.B, s2, iso(0), iso(20))
     await bedTo(db, bed.B, ['blocked', 'needs_cleaning'])
-    // Rahul Menon (E1007, the seeded resident) lives in bed C; another resident is overdue in bed D
-    const rahul = (await db.query<{ id: string }>(`SELECT id FROM staff_profile WHERE employee_id = 'E1007'`)).rows[0].id
+    // Sam Stays (E1302, the seeded resident) lives in bed C; another resident is overdue in bed D
+    const rahul = (await db.query<{ id: string }>(`SELECT id FROM staff_profile WHERE employee_id = 'E1302'`)).rows[0].id
     const stay = async (b: string, s: string, from: string, to: string) => {
       const c = (await db.query<{ id: string }>(`INSERT INTO bed_claim (bed_id, kind, period) VALUES ($1, 'stay', $2::daterange) RETURNING id`, [b, `[${from},${to})`])).rows[0].id
       const st = (await db.query<{ id: string }>(`INSERT INTO stay (staff_id, bed_id, claim_id, status, stay_type, checked_in_at) VALUES ($1, $2, $3, 'active', 'contract', now() - interval '5 days') RETURNING id`, [s, b, c])).rows[0].id
@@ -119,7 +119,7 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
   await expect(page.getByRole('list', { name: 'Bulk check-in result' })).toContainText('Checked in')
 
   /* ---------------- the resident asks (also from a phone) ---------------- */
-  await signIn(page, 'E1007')
+  await signIn(page, 'E1302')
   await page.goto('/my')
   await expect(page.getByRole('heading', { name: 'My accommodation' })).toBeVisible()
   await expect(page.getByText(`Room ${tag}`).first()).toBeVisible()
@@ -138,11 +138,11 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
   await signIn(page, 'E9001')
   await page.goto('/stays')
   const waiting = page.getByRole('list', { name: 'Requests waiting' })
-  await expect(waiting).toContainText('Rahul Menon')
+  await expect(waiting).toContainText('Sam Stays')
   await waiting.getByRole('button', { name: 'Approve extension' }).click()
   await expect(page.getByText(`Stay extended until ${iso(30)}`)).toBeVisible()
   await page.goto('/stays/transfers')
-  const move = page.locator('section', { hasText: 'Move: Rahul Menon' })
+  const move = page.locator('section', { hasText: 'Move: Sam Stays' })
   await expect(move).toContainText('Waiting for approval')
   await move.getByLabel('Destination bed').selectOption({ label: `Room ${tag} · ${code('E')}` })
   await move.getByRole('button', { name: 'Approve transfer' }).click()
@@ -152,14 +152,14 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
   await withE2eDb(siteCode, async db => bedTo(db, ids.bed.E, ['blocked']))
   await signIn(page, 'E9002')
   await page.goto('/stays/transfers')
-  const approved = page.locator('section', { hasText: 'Move: Rahul Menon' })
+  const approved = page.locator('section', { hasText: 'Move: Sam Stays' })
   await expect(approved).toContainText('Approved: waiting for Reception')
   await approved.getByRole('button', { name: 'Carry out move now' }).click()
   await expect(approved.getByRole('alert')).toContainText(/blocked/i)
   await expect(approved.getByRole('alert')).toContainText('Owner:')
   await expect(approved.getByRole('alert')).toContainText('Next:')
   await page.reload()
-  await expect(page.locator('section', { hasText: 'Move: Rahul Menon' })).toContainText('Failed: nobody moved')
+  await expect(page.locator('section', { hasText: 'Move: Sam Stays' })).toContainText('Failed: nobody moved')
   await withE2eDb(siteCode, async db => {
     const s = (await db.query(`SELECT bed_id FROM stay WHERE id = $1`, [ids.rahulStay])).rows[0]
     expect(s.bed_id).toBe(ids.bed.C)
@@ -169,14 +169,14 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
   // the Accommodation Admin chooses another bed and approves again; Reception carries it out
   await signIn(page, 'E9001')
   await page.goto('/stays/transfers')
-  const failed = page.locator('section', { hasText: 'Move: Rahul Menon' })
+  const failed = page.locator('section', { hasText: 'Move: Sam Stays' })
   await expect(failed).toContainText('Failed: nobody moved')
   await failed.getByLabel('Destination bed').selectOption({ label: `Room ${tag} · ${code('F')}` })
   await failed.getByRole('button', { name: 'Approve with this bed' }).click()
   await expect(page.getByText('Transfer approved')).toBeVisible()
   await signIn(page, 'E9002')
   await page.goto('/stays/transfers')
-  await page.locator('section', { hasText: 'Move: Rahul Menon' }).getByRole('button', { name: 'Carry out move now' }).click()
+  await page.locator('section', { hasText: 'Move: Sam Stays' }).getByRole('button', { name: 'Carry out move now' }).click()
   await expect(page.getByText(/Moved to/)).toBeVisible()
   await withE2eDb(siteCode, async db => {
     expect((await db.query(`SELECT bed_id FROM stay WHERE id = $1`, [ids.rahulStay])).rows[0].bed_id).toBe(ids.bed.F)
@@ -185,7 +185,7 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
   })
 
   /* ---------------- the resident leaves ---------------- */
-  await signIn(page, 'E1007')
+  await signIn(page, 'E1302')
   await page.goto('/my')
   await page.getByLabel('Departure day', { exact: true }).fill(iso(3))
   await page.getByRole('button', { name: 'Request checkout' }).click()
@@ -203,7 +203,7 @@ test('check-in, extension, move that fails safely and is retried, and checkout',
     expect((await db.query(`SELECT status FROM stay WHERE id = $1`, [ids.rahulStay])).rows[0].status).toBe('checked_out')
     expect((await db.query(`SELECT state FROM bed WHERE id = $1`, [ids.bed.F])).rows[0].state).toBe('needs_cleaning')
   })
-  await signIn(page, 'E1007')
+  await signIn(page, 'E1302')
   await page.goto('/my')
   await expect(page.getByText(/You checked out of/)).toBeVisible()
 })

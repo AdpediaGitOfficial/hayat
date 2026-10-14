@@ -38,7 +38,7 @@ test('first sign-in forces a new password, then the session works', async ({ pag
 test('a user with two roles switches mode and the scope changes', async ({ page }) => {
   await signIn(page, 'E9060')
   await expect(page.getByText('1 assigned')).toBeVisible()
-  await page.locator('.topbar button').first().click()
+  await page.locator('.topbar button').last().click()
   await page.getByRole('menuitemradio', { name: /Resident/ }).click()
   await expect(page.getByText('No site scope')).toBeVisible()
 })

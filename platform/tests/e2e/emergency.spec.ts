@@ -9,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test'
  * (reason mandatory): the resident stays in the bed as Resolution pending and a relocation task opens. The AA approves the other one.
  */
 const PASSWORD = 'Welcome-GH-2026'
-const PORT = Number(process.env.E2E_PORT ?? 3127)
+const PORT = Number(process.env.E2E_PORT ?? 3120)
 const tag = randomBytes(3).toString('hex').toUpperCase()
 
 async function signIn(page: Page, username: string) {

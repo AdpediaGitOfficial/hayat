@@ -70,7 +70,17 @@ function ApproveBox({ request, beds }: { request: RequestDetail; beds: BedsForRe
           <h3>Suggested beds</h3>
           <div className="muted body-sm" style={{ marginBottom: 8 }}>Eligible and free for these dates. A bed that still needs cleaning can be reserved: readiness gates check-in, not the reservation.</div>
           {beds.suggestions.length === 0
-            ? <Blocked why="No eligible free bed for these dates" owner="Accommodation Admin" next="Choose a different bed below, send the request back, or reject it. A waitlist offer is the next step when no bed is free" />
+            ? (
+              <div className="stack" style={{ gap: 10 }}>
+                <Blocked why="No eligible free bed for these dates" owner="Accommodation Admin" next="Add the person to the waitlist: the request becomes Waitlisted and an offer turns it into a reservation when a bed frees up. Or choose another bed below, send the request back, or reject it" />
+                <div className="row wrap">
+                  <Button icon="hourglass" disabled={busy} onClick={() => run('POST', '/api/v1/waitlist', {
+                    staffId: request.person.staffId, siteId: request.site.id, requestId: request.id,
+                    arrival: request.arrivalDate, end: request.endDate ?? null, stayType: request.stayType,
+                  })}>{busy ? 'Adding…' : 'Add to the waitlist'}</Button>
+                </div>
+              </div>
+            )
             : <div className="bed-grid" role="listbox" aria-label="Suggested beds">{beds.suggestions.map(b => (
               <button key={b.bedId} type="button" role="option" aria-selected={bedId === b.bedId} className={`bed ${bedId === b.bedId ? 'sel' : ''} ${b.state === 'available' ? 'available' : 'reserved'}`} onClick={() => { setBedId(b.bedId); clear() }}>
                 <span className="code">{b.code}</span><span className="sub">Room {b.roomName}</span><span className="sub">{b.state === 'available' ? 'Ready now' : b.state.replace(/_/g, ' ')}</span>

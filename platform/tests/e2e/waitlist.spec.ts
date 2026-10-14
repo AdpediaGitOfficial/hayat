@@ -34,20 +34,20 @@ test('waitlist: add, offer a bed, first decline keeps the place, second offer is
   await expect(page.getByRole('heading', { name: 'Waitlist', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Add to waitlist' }).click()
   const add = page.getByRole('dialog', { name: 'Add to the waitlist' })
-  await add.getByLabel('Employee ID').fill('E1007')
+  await add.getByLabel('Employee ID').fill('E1301')
   await add.getByLabel('Site').selectOption({ label: 'Palm Villas' })
   await add.getByLabel('Wanted from').fill(day(10))
   await add.getByLabel('Until (departure day)').fill(day(70))
   await add.getByRole('button', { name: 'Add to waitlist' }).click()
   const queue = page.getByTestId('queue-PV')
-  const row = queue.getByRole('row', { name: /Rahul Menon/ })
+  const row = queue.getByRole('row', { name: /Wanda Waitlist/ })
   await expect(row).toBeVisible()
   await expect(row.getByText('Waiting')).toBeVisible()
   await expect(row.getByText(/left/)).toBeVisible() // the 15-day countdown
   // the same person cannot be added twice
   await page.getByRole('button', { name: 'Add to waitlist' }).click()
   const again = page.getByRole('dialog', { name: 'Add to the waitlist' })
-  await again.getByLabel('Employee ID').fill('E1007')
+  await again.getByLabel('Employee ID').fill('E1301')
   await again.getByLabel('Site').selectOption({ label: 'Palm Villas' })
   await again.getByLabel('Wanted from').fill(day(10))
   await again.getByRole('button', { name: 'Add to waitlist' }).click()
@@ -56,18 +56,18 @@ test('waitlist: add, offer a bed, first decline keeps the place, second offer is
 
   /* ---- offers the first bed: it is held, and the 48 hours have not started ---- */
   await row.getByRole('button', { name: 'Offer a bed' }).click()
-  const offer = page.getByRole('dialog', { name: /Offer a bed to Rahul Menon/ })
+  const offer = page.getByRole('dialog', { name: /Offer a bed to Wanda Waitlist/ })
   await expect(offer.getByLabel('Bed to hold')).toBeVisible()
   await expect.poll(async () => offer.getByLabel('Bed to hold').locator('option').count()).toBeGreaterThan(1)
   const first = await offer.getByLabel('Bed to hold').locator('option').allTextContents()
   await offer.getByLabel('Bed to hold').selectOption({ index: first.findIndex(o => o.includes(`W${tag}-A`)) })
   await offer.getByRole('button', { name: 'Hold this bed' }).click()
-  await expect(queue.getByRole('row', { name: /Rahul Menon/ }).getByText('Offered')).toBeVisible()
+  await expect(queue.getByRole('row', { name: /Wanda Waitlist/ }).getByText('Offered')).toBeVisible()
   await expect(queue.getByText('Offers in flight')).toBeVisible()
   await expect(queue.getByText('Not delivered')).toBeVisible()
 
   /* ---- the resident opens the offer (confirmed delivery) and declines once ---- */
-  await signIn(page, 'E1007')
+  await signIn(page, 'E1301')
   await page.goto('/my')
   const mine = page.getByTestId('my-waitlist')
   await expect(mine.getByText('A bed is being held for you')).toBeVisible()
@@ -84,8 +84,8 @@ test('waitlist: add, offer a bed, first decline keeps the place, second offer is
   /* ---- the Accommodation Admin offers the other bed (the declined one is not offered again) ---- */
   await signIn(page, 'E9001')
   await page.goto('/waitlist')
-  await page.getByTestId('queue-PV').getByRole('row', { name: /Rahul Menon/ }).getByRole('button', { name: 'Offer a bed' }).click()
-  const second = page.getByRole('dialog', { name: /Offer a bed to Rahul Menon/ })
+  await page.getByTestId('queue-PV').getByRole('row', { name: /Wanda Waitlist/ }).getByRole('button', { name: 'Offer a bed' }).click()
+  const second = page.getByRole('dialog', { name: /Offer a bed to Wanda Waitlist/ })
   await expect.poll(async () => second.getByLabel('Bed to hold').locator('option').count()).toBeGreaterThan(1)
   const options = await second.getByLabel('Bed to hold').locator('option').allTextContents()
   expect(options.some(o => o.includes(`W${tag}-A`))).toBe(false)
@@ -101,7 +101,7 @@ test('waitlist: add, offer a bed, first decline keeps the place, second offer is
   await expect(page.getByTestId('queue-PV').getByRole('button', { name: 'Offer a bed' })).toHaveCount(0) // Reception cannot offer beds
 
   /* ---- the resident accepts ---- */
-  await signIn(page, 'E1007')
+  await signIn(page, 'E1301')
   await page.goto('/my')
   const mine2 = page.getByTestId('my-waitlist')
   await expect(mine2.getByText('A bed is being held for you')).toBeVisible()
@@ -111,10 +111,10 @@ test('waitlist: add, offer a bed, first decline keeps the place, second offer is
   /* ---- the queue no longer lists them; the Accommodation Admin of Lakeview never saw any of it ---- */
   await signIn(page, 'E9001')
   await page.goto('/waitlist')
-  await expect(page.getByTestId('queue-PV').getByRole('row', { name: /Rahul Menon/ })).toHaveCount(0)
+  await expect(page.getByTestId('queue-PV').getByRole('row', { name: /Wanda Waitlist/ })).toHaveCount(0)
   await signIn(page, 'E9011')
   await page.goto('/waitlist')
   await expect(page.getByTestId('queue-PV')).toHaveCount(0)
   await expect(page.getByTestId('queue-LV')).toBeVisible()
-  await expect(page.getByText('Rahul Menon')).toHaveCount(0)
+  await expect(page.getByText('Wanda Waitlist')).toHaveCount(0)
 })

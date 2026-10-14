@@ -22,6 +22,9 @@ export default async function setup() {
   await admin.query(`CREATE ROLE ${login} LOGIN PASSWORD '${pw}' IN ROLE app_role`)
   const appUrl = new URL(ownerUrl); appUrl.username = login; appUrl.password = pw
 
+  // Specs that arrange data directly (beds, capability grants) use the owner connection of this run's database.
+  process.env.E2E_DATABASE_URL = ownerUrl
+
   execFileSync('npx', ['tsx', 'scripts/seed-dev.ts'], { env: { ...process.env, DATABASE_URL: ownerUrl, SEED_PASSWORD: E2E_PASSWORD }, stdio: 'inherit' })
 
   const server: ChildProcess = spawn('npx', ['next', 'start', '-p', String(port)], {

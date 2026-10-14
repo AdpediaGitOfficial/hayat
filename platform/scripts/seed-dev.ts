@@ -35,6 +35,8 @@ const USERS: { employeeId: string; name: string; gender: 'male' | 'female'; role
   { employeeId: 'E9050', name: 'Arun Pillai', gender: 'male', roles: [{ role: 'Aud', sites: ['PV', 'MA', 'LV'] }] },
   { employeeId: 'E1007', name: 'Rahul Menon', gender: 'male', roles: [{ role: 'Res', sites: 'own' }] },
   { employeeId: 'E1099', name: 'Nisha Thomas (first sign-in)', gender: 'female', roles: [{ role: 'Res', sites: 'own' }], mustChange: true },
+  { employeeId: 'E1302', name: 'Sam Stays', gender: 'male', roles: [{ role: 'Res', sites: 'own' }] },
+  { employeeId: 'E1301', name: 'Wanda Waitlist', gender: 'female', roles: [{ role: 'Res', sites: 'own' }] },
   { employeeId: 'E1200', name: 'Imran Ali (no account yet)', gender: 'male', roles: [], noAccount: true },
   { employeeId: 'E9060', name: 'Priya Iyer (AA and Resident)', gender: 'female', roles: [{ role: 'AA', sites: ['LV'] }, { role: 'Res', sites: 'own' }] },
 ]

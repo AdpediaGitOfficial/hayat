@@ -98,11 +98,13 @@ As Stage 1: gate tests green in CI; contract test green; typecheck and lint clea
 
 | Package | Status |
 |---|---|
-| WP-0 Allocation core | Done (migration 0040, allocation, eligibility, notify, sweeps, approvals framework, fixtures, tests) |
-| WP-D Requests, approvals, allocation | Not started |
-| WP-E Waitlist and offers | Not started |
-| WP-F Check-in, stay, transfer, extension, checkout | Not started |
-| WP-G Emergency check-in | Not started |
+| WP-0 Allocation core | Done |
+| WP-D Requests, approvals, allocation | Done: migration 0050, requests, exceptions, approval = bed + reservation atomically, inbox, delegation, reservation admin, bulk allocation, screens |
+| WP-E Waitlist and offers | Done: migration 0060, entry, queue, priority, renewal, offers, three sweeps, screens |
+| WP-F Check-in, stay, transfer, extension, checkout | Done: migration 0070, check-in (single, bulk), transfer and swap, extension, voluntary checkout, four sweeps, screens |
+| WP-G Emergency check-in | Done: migration 0080, provisional stay, approve, reject with relocation task, reminder and escalation sweeps, screens |
+| Cross-package journeys | `tests/api/integration/journey.test.ts`: request to checkout, and waitlist to offer to check-in, through the real routes |
+| Exit gate | See section 12 |
 
 ## 10. Recipe for work packages D to G (WP-0 as built)
 
@@ -135,3 +137,21 @@ Read `docs/STAGE-1.md` section 9 first (migration, schema file, command, query, 
 **Shared tables you may touch from your package** (only these columns, only in your commands): `accommodation_request.status` and decision columns (WP-D; WP-E sets `waitlisted` and `approved` when an offer is accepted), `reservation` (created by WP-D approval, WP-E accept, WP-F check-in marks `checked_in`, no-show sweep marks `no_show` or `expired`), `stay` (WP-F check-in, WP-G provisional), `bed.state` only through legal transitions (check-in available to occupied; voluntary checkout occupied to needs_cleaning).
 
 **Report (final message, under 450 words):** what you built (files by area), final vitest line and build results, Playwright result, decisions you made where the docs were silent (each with the default), questions for the product owner, what you needed from WP-0, anything unfinished, worktree branch name and last commit hash.
+
+## 12. Exit gate result (14 Oct 2026)
+
+Merged branch, real PostgreSQL 16, application connected as `app_role`:
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `next lint`, `next build` | clean |
+| Vitest (55 files) | 979 passed, 0 failed |
+| Acceptance tests by name | AT-006, 007, 008 (WP-D); 009, 010, 011, 012, 013, 030 (WP-E, WP-0); 015, 016, 017, 018 (WP-G); 022 (WP-F): each has an API-level test (`grep -r "AT-0" platform/tests/api`) |
+| Section 7 proofs | 2 (failed transfer/swap leaves everyone in place), 3 (same-day turnover), 4 (held bed), 5 (readiness gates check-in only), 6 (idempotent retries and sweeps) covered; 1 is covered by the allocation boundary test plus the database constraint tests (no randomized command-sequence property test yet) |
+| Permission contract test | green with every Stage 2 route |
+| Playwright smoke | 19 passed (auth, property, staff, access, requests, waitlist, stays, emergency) in one run on one database |
+| Severity-1 defects | none known |
+
+**Seams fixed at merge:** one description of `waitlist_entry` and `bed_offer`; WP-D's screen now calls WP-E's `addToWaitlist` (the "Add to the waitlist" button when no bed is free); WP-D's test inserts the columns WP-E made required; shared-database e2e data (separate seeded residents per spec, one database URL for specs that arrange data).
+
+**Carried forward:** D-65 bulk emergency relocation; open-ended stay review workflow (D-54); a counter for more than one no-show extension; randomized property test of the bed-claim invariant; live countdown refresh; D-37 and the other Stage 3 items. Open questions S-12 to S-17 in `docs/PLAN.md`.

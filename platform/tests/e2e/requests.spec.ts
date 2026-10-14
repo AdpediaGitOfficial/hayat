@@ -114,7 +114,7 @@ test('a resident requests a bed on a phone, the AA approves from the inbox in on
   await card.getByRole('link', { name: 'Review and allocate' }).click()
   await expect(page.getByRole('heading', { name: 'Request: Rahul Menon' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve and reserve' })).toBeDisabled()
-  await page.getByRole('listbox', { name: 'Suggested beds' }).getByRole('option').first().click()
+  await page.getByRole('listbox', { name: 'Suggested beds' }).getByRole('option', { name: /R[MQ][0-9A-F]+-[AB]/ }).first().click()
   await page.getByRole('button', { name: /^Approve and reserve .+/ }).click()
   await expect(page.getByText('Approved: a bed is reserved for you')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Reservation' })).toBeVisible()
@@ -261,7 +261,9 @@ test('sent back for changes: the resident edits and sends it back, then cancels;
   await expect(page.getByTestId('my-request')).toContainText('Sent back to you: Please confirm the departure date with your manager')
   await page.getByRole('link', { name: 'Edit and send back' }).click()
   await page.getByLabel('Departure day').fill(ymd(40))
+  const saved = page.waitForResponse(r => r.request().method() !== 'GET' && r.url().includes('/api/v1/requests/')) // do not navigate away mid-request
   await page.getByRole('button', { name: 'Save and send back' }).click()
+  await saved
   await page.goto('/my')
   await expect(page.getByTestId('my-request')).toContainText('Waiting for an Accommodation Admin to choose a bed')
 
