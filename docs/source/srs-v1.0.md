@@ -1845,7 +1845,7 @@ sign-off register (section 17, P-01 to P-14). Where a proposal ships OFF, the sy
 | 5.6 | Clearance items may be restricted to their owner. | PROPOSED P-07, OFF |
 | 5.6 | A person who never had a stay, reservation or request at any site can be marked Left only by a Super Admin. | PROPOSED P-08, OFF |
 | 11 (keys) | Key desk office hours (08:00 to 20:00 per site), flagged on every movement, optionally enforced; evidence for a damaged key; a resident may report their own key lost. A lost or damaged key is never marked returned (D-73, DECIDED). | PROPOSED P-03, P-04, P-05, OFF |
-| 12 (readiness) | A bed that is not ready cannot be checked into or offered for a start date inside the lead time (1 day), and becomes Available only through a passed final inspection by someone other than the cleaner (AT-021, DECIDED). A bed with no cleaning record can be given a task by hand. | P-13, P-14 PROPOSED, ON (AT-021, SPEC-AMENDMENTS C-6) |
+| 12 (readiness) | A bed that is not ready cannot be checked into, and cannot be offered or reserved for a start date inside the lead time (1 day), and becomes Available only through a passed final inspection by someone other than the cleaner (AT-021, DECIDED). A bed with no cleaning record can be given a task by hand. | P-13, P-14 PROPOSED, ON (AT-021, SPEC-AMENDMENTS C-6) |
 | 16 | Acceptance tests AT-033 to AT-040 added. | New |
 
 

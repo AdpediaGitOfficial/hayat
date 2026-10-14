@@ -14,6 +14,9 @@ import type { CommandContext } from '@/server/command/context'
 import { fail, ok, type Result } from '@/server/command/result'
 import type { ClaimKind } from '@/domain/enums'
 import { checkEligibility } from '@/server/eligibility'
+import { getConfig } from '@/server/config/registry'
+import { todayInZone } from '@/server/commands/property/shared'
+import { addDays } from '@/domain/time'
 import { insertClaim, overlappingClaims } from './claims'
 import { suggestBeds } from './suggest'
 
@@ -43,7 +46,7 @@ const UNAVAILABLE: Record<string, string> = { blocked: 'blocked', under_maintena
 export async function allocateBed(c: CommandContext, a: AllocateInput): Promise<Result<Allocated>> {
   const [b] = await c.tx.select({
     id: bed.id, code: bed.code, state: bed.state, stateReason: bed.stateReason, siteId: bed.siteId, archivedAt: bed.archivedAt,
-    roomName: room.name, siteName: site.name,
+    roomName: room.name, siteName: site.name, tz: site.timeZone,
   }).from(bed).innerJoin(room, eq(room.id, bed.roomId)).innerJoin(site, eq(site.id, bed.siteId))
     .where(eq(bed.id, a.bedId)).limit(1).for('update', { of: bed })
   if (!b) return fail.notFound()
@@ -54,6 +57,22 @@ export async function allocateBed(c: CommandContext, a: AllocateInput): Promise<
   }
   if (a.requireReady && b.state !== 'available') {
     return fail.conflict(`Bed ${b.code} is not ready (${b.state.replace(/_/g, ' ')})`, 'Housekeeping and final inspection', 'Finish cleaning and inspection, or move the resident to a ready bed', { reason: 'bed_not_ready', bedId: b.id, state: b.state })
+  }
+
+  // P-13 (proposed, pending client sign-off, `readiness.offer_lead_days`; AT-021, D-18, SPEC-AMENDMENTS C-6): a bed that is not ready can carry a
+  // reservation for a LATER date, not one that starts inside the lead time. Offers apply the same rule in `createOffer`; check-in uses `requireReady`.
+  if (a.kind === 'reservation' && (b.state === 'needs_cleaning' || b.state === 'inspection_required')) {
+    const lead = await getConfig(c.tx, 'readiness.offer_lead_days')
+    if (lead > 0) {
+      const today = todayInZone(c.now, b.tz)
+      const earliest = addDays(today, lead)
+      if (a.from < earliest) {
+        const waiting = b.state === 'needs_cleaning' ? ['Housekeeping', 'Assign and finish the cleaning and the final inspection, or reserve from ' + earliest] : ['Final Inspection holder', 'Complete the final inspection, or reserve from ' + earliest]
+        return fail.conflict(
+          `Bed ${b.code} is not ready (${b.state.replace(/_/g, ' ')}), so it cannot be reserved from ${a.from}. A bed that is not ready can be reserved from ${earliest}; proposed policy P-13, pending client sign-off`,
+          waiting[0], waiting[1], { reason: 'bed_not_ready', bedId: b.id, state: b.state, from: a.from, earliest, leadDays: lead, proposal: 'P-13' })
+      }
+    }
   }
 
   let exceptionIds: string[] = []
