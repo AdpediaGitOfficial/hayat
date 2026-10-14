@@ -93,7 +93,7 @@ export function archiveStructure(rc: RequestContext, kind: StructureKind, i: Arc
         }
         out.rooms = scope.rooms.length
         await c.tx.update(building).set({ archivedAt: c.now }).where(eq(building.id, i.id))
-        await audit(c, { action: 'property.building.archived', entityType: 'building', entityId: i.id, siteId, after: { archived: true, rooms: scope.rooms.length, beds: scope.beds.length }, ...why })
+        await audit(c, { action: 'property.building.archived', entityType: 'building', entityId: i.id, siteId, before: { archived: false }, after: { archived: true, rooms: scope.rooms.length, beds: scope.beds.length }, ...why })
         out.buildings = 1
       }
     }

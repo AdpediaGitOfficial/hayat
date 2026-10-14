@@ -54,7 +54,7 @@ export async function archiveStaff(rc: RequestContext, raw: ArchiveStaffInput): 
     }
 
     await c.tx.update(staffProfile).set({ archivedAt: c.now, updatedAt: c.now }).where(eq(staffProfile.id, id))
-    await audit(c, { action: 'staff.archived', entityType: 'staff_profile', entityId: id, reason: raw.reason })
+    await audit(c, { action: 'staff.archived', entityType: 'staff_profile', entityId: id, reason: raw.reason, before: { archived: false }, after: { archived: true, archivedAt: c.now.toISOString() } })
     return ok({ id, archivedAt: c.now }, 'Archived. The history stays; nothing is deleted')
   })
 }

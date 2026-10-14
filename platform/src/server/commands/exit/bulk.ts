@@ -13,7 +13,7 @@ import { z } from 'zod'
 import { staffProfile } from '@/server/db/schema'
 import { exitBulkBatch, exitBulkRow, type ExitRowOutcome } from '@/server/db/schema.exit'
 import { audit } from '@/server/audit'
-import { notSelf } from '@/server/command/authorize'
+import { authorize, notSelf } from '@/server/command/authorize'
 import { runCommand } from '@/server/command/run'
 import type { CommandContext, RequestContext } from '@/server/command/context'
 import { fail, failure, ok, type Failure, type Result } from '@/server/command/result'
@@ -99,6 +99,9 @@ export interface PreviewExitOut { batchId: string; batch: ExitBatchView; duplica
 
 export function previewBulkExit(rc: RequestContext, i: PreviewExitInput): Promise<Result<PreviewExitOut>> {
   return runCommand(rc, async c => {
+    // A person who may never mark anyone as Left is refused before a batch (and an audit row) is written; the rows are then judged per site.
+    const denied = authorize(c, 'exit_clearance.mark_left')
+    if (denied) return denied
     const { ids, duplicates } = parseEmployeeIds(i)
     if (ids.length === 0) return fail.invalid('There is nobody to mark as Left', { employeeIds: 'Paste at least one employee ID' })
     if (ids.length > MAX_ROWS) return fail.invalid(`At most ${MAX_ROWS} people at a time`, { employeeIds: `Split the list: ${ids.length} is too many` })
