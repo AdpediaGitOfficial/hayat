@@ -107,7 +107,7 @@ sudo -u ghapp pm2 save
 sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ghapp --hp /home/ghapp   # prints one command; run it once so PM2 starts on boot
 ```
 
-Settings come from `/etc/gh-platform.env` through Node's `--env-file`, so the file must be readable by `ghapp` (mode 0640, group `ghapp`). Use `pm2 logs`, `pm2 restart gh-platform gh-sweeps` and `pm2 status`. Run the app as one process: it keeps per-process state, so don't use `-i max` cluster mode. Use either PM2 or the systemd services, not both, or the port is taken twice.
+Settings come from `/etc/gh-platform.env` through Node's `--env-file`, so the file must be readable by `ghapp` (mode 0640, group `ghapp`). Use `pm2 logs`, `pm2 restart gh-platform gh-sweeps` and `pm2 status`. Run the app as one process; I have not tested several instances, so don't use `-i max` cluster mode Use either PM2 or the systemd services, not both, or the port is taken twice.
 
 ## 7. Run the sweeps (reminders and escalations)
 
