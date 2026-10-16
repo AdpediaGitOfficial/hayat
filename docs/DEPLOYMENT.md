@@ -96,6 +96,19 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+### Alternative to systemd: PM2
+
+`deploy/ecosystem.config.cjs` runs the app and the sweeps under PM2 instead of steps 6 and 7. Tested here: both processes start from that file, the app answers `/api/health`, and the sweeps loop runs. The `pm2 startup` boot step is not tested.
+
+```bash
+sudo npm install -g pm2
+sudo -u ghapp pm2 start /opt/gh-platform/deploy/ecosystem.config.cjs
+sudo -u ghapp pm2 save
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ghapp --hp /home/ghapp   # prints one command; run it once so PM2 starts on boot
+```
+
+Settings come from `/etc/gh-platform.env` through Node's `--env-file`, so the file must be readable by `ghapp` (mode 0640, group `ghapp`). Use `pm2 logs`, `pm2 restart gh-platform gh-sweeps` and `pm2 status`. Run the app as one process: it keeps per-process state, so don't use `-i max` cluster mode. Use either PM2 or the systemd services, not both, or the port is taken twice.
+
 ## 7. Run the sweeps (reminders and escalations)
 
 The timers (offer expiry, reminders, escalation; they never approve, reject or move anyone) run in a separate process. Without it nothing escalates. `/etc/systemd/system/gh-sweeps.service`:
