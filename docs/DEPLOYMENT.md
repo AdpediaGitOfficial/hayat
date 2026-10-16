@@ -1,5 +1,7 @@
 # Deployment (no containers)
 
+**Fastest route on Ubuntu 22.04/24.04:** `deploy/install.sh` does the steps below in one run (see its header for the variables). The steps are listed so you can see, check or do them by hand. Verified here against a real PostgreSQL: a non-superuser owner login, `app_role` created first, migrations, first-admin, and the app running and signing in as `gh_app`. The script itself has only been syntax-checked, not run on a fresh server.
+
 For a Linux server (Ubuntu 22.04/24.04 assumed) running the app directly with Node, PostgreSQL 16, a process manager and a reverse proxy. Verified here: migrations, the first-admin script, `npm run build`, `npm start`, `/api/health` and the login page. **Not verified here:** the systemd unit, nginx and TLS steps below (written from standard practice; run them on a staging server first).
 
 **Status:** Stages 0 to 3 plus the hardening round are built. Stage 4 (operations and security), Stage 5 (email delivery, reports) and Stage 6 (UAT, penetration test) are not, so this is a staging or pilot deployment with test data, not a go-live. Proposed policies P-01 to P-14 are pending client sign-off; leave their defaults.
@@ -22,10 +24,10 @@ CREATE ROLE gh_owner LOGIN PASSWORD '<strong-password-1>';
 ALTER DATABASE gh_platform OWNER TO gh_owner;
 ```
 
-Run the migrations once (step 4), which also create `app_role`. Then create the login the app will use. It has no DELETE rights and cannot touch the audit log:
+`app_role` must exist before the migrations run, because `gh_owner` cannot create roles (migration 0007 fails with "permission denied to create role" otherwise; checked). Create it, then the login the app will use. It has no DELETE rights and cannot change the audit log:
 
 ```sql
-\c gh_platform
+CREATE ROLE app_role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 CREATE ROLE gh_app LOGIN PASSWORD '<strong-password-2>' IN ROLE app_role;
 ```
 
@@ -56,9 +58,8 @@ INTERNAL_JOB_TOKEN=<long random string, optional, only if a scheduler calls the 
 
 ```bash
 cd /opt/gh-platform/platform
-# privileged (owner) URL, for this command only; it also creates app_role
+# privileged (owner) URL, for this command only. Never put this password in /etc/gh-platform.env
 sudo -u ghapp env DATABASE_URL=postgres://gh_owner:<strong-password-1>@127.0.0.1:5432/gh_platform npm run db:migrate
-# create the gh_app login now if you have not yet (step 2), then:
 sudo -u ghapp npm run build
 ```
 

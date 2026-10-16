@@ -1,0 +1,14 @@
+[Unit]
+Description=Grand Hyatt platform sweeps (reminders and escalations, never decisions)
+After=network.target postgresql.service
+
+[Service]
+User=ghapp
+WorkingDirectory=/opt/gh-platform/platform
+EnvironmentFile=/etc/gh-platform.env
+ExecStart=/usr/bin/npm run sweeps -- --loop 60
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

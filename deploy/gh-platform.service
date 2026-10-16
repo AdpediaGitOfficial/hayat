@@ -1,0 +1,14 @@
+[Unit]
+Description=Grand Hyatt Staff Accommodation Platform
+After=network.target postgresql.service
+
+[Service]
+User=ghapp
+WorkingDirectory=/opt/gh-platform/platform
+EnvironmentFile=/etc/gh-platform.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
